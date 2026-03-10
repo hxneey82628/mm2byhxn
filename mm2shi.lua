@@ -1,8 +1,30 @@
+-- Prevent double-loading: if hub is already loaded, stop here
+if _G.HXNHubLoaded then
+	warn("[HXN] Hub is already loaded, aborting second execute.")
+	return
+end
+_G.HXNHubLoaded = true
+
 -- Cleanup old script instance if running again
 print("[HXN] Starting script cleanup...")
 
+-- Destroy any old Wind UI windows in CoreGui
+pcall(function()
+	local CoreGui = game:GetService("CoreGui")
+	local WindUIGui = CoreGui:FindFirstChild("WindUI")
+	if WindUIGui then
+		print("[HXN] Removing old Wind UI instance from CoreGui...")
+		WindUIGui:Destroy()
+	end
+end)
+
 if _G.HXN_WINDOW then
 	print("[HXN] Closing old window...")
+	pcall(function() 
+		if _G.HXN_WINDOW.Window then
+			_G.HXN_WINDOW.Window:Destroy()
+		end
+	end)
 	pcall(function() _G.HXN_WINDOW:Close() end)
 	_G.HXN_WINDOW = nil
 end
@@ -38,6 +60,18 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end
 end
 
+-- Unfreeze local player if frozen
+pcall(function()
+	local localPlayer = game.Players.LocalPlayer
+	if localPlayer and localPlayer.Character then
+		local hrp = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			hrp.Anchored = false
+			hrp.CanCollide = true
+		end
+	end
+end)
+
 -- Clean up old Visual effects (Blur, Bloom, Color Correction)
 print("[HXN] Cleaning up old Visual effects...")
 local Lighting = game:GetService("Lighting")
@@ -69,83 +103,150 @@ pcall(function()
 	if oldSky then oldSky:Destroy() end
 end)
 
-print("[HXN] Loading Rayfield...")
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-print("[HXN] Creating window...")
+----------------------------------------------------------------
+-- LOAD WIND UI INSTEAD OF RAYFIELD
+----------------------------------------------------------------
+print("[HXN] Loading Wind UI...")
 
--- Custom Modern Glassmorphism Theme with Red & Black Mirror Glass
-local CustomTheme = {
-	TextColor = Color3.fromRGB(240, 240, 240),
+local success, WindUI = pcall(function()
+    -- TODO: replace URL below with your actual Wind UI URL
+    return loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/1.6.62/main.lua"))()
+end)
 
-	-- Dark black mirror glass background effect
-	Background = Color3.fromRGB(8, 8, 10),
-	Topbar = Color3.fromRGB(12, 12, 15),
-	Shadow = Color3.fromRGB(3, 3, 5),
+if not success then
+    print("[HXN] ERROR: Failed to load Wind UI library! " .. tostring(WindUI))
+    return
+end
 
-	NotificationBackground = Color3.fromRGB(12, 12, 15),
-	NotificationActionsBackground = Color3.fromRGB(240, 240, 245),
+if not WindUI then
+    print("[HXN] ERROR: Loadstring returned nil!")
+    return
+end
 
-	-- Red glowing accents
-	TabBackground = Color3.fromRGB(20, 15, 15),
-	TabStroke = Color3.fromRGB(220, 40, 40),
-	TabBackgroundSelected = Color3.fromRGB(180, 25, 25),
-	TabTextColor = Color3.fromRGB(240, 240, 240),
-	SelectedTabTextColor = Color3.fromRGB(255, 100, 100),
+-- Darker + more transparent window
+WindUI.TransparencyValue = 0.35
 
-	ElementBackground = Color3.fromRGB(15, 12, 12),
-	ElementBackgroundHover = Color3.fromRGB(35, 20, 20),
-	SecondaryElementBackground = Color3.fromRGB(10, 8, 8),
-	ElementStroke = Color3.fromRGB(255, 50, 50),
-	SecondaryElementStroke = Color3.fromRGB(220, 40, 40),
-			
-	SliderBackground = Color3.fromRGB(220, 30, 30),
-	SliderProgress = Color3.fromRGB(255, 60, 60),
-	SliderStroke = Color3.fromRGB(255, 80, 80),
-
-	ToggleBackground = Color3.fromRGB(15, 12, 12),
-	ToggleEnabled = Color3.fromRGB(220, 35, 35),
-	ToggleDisabled = Color3.fromRGB(80, 60, 60),
-	ToggleEnabledStroke = Color3.fromRGB(255, 80, 80),
-	ToggleDisabledStroke = Color3.fromRGB(180, 100, 100),
-	ToggleEnabledOuterStroke = Color3.fromRGB(255, 120, 120),
-	ToggleDisabledOuterStroke = Color3.fromRGB(150, 80, 80),
-
-	DropdownSelected = Color3.fromRGB(35, 20, 20),
-	DropdownUnselected = Color3.fromRGB(15, 12, 12),
-
-	InputBackground = Color3.fromRGB(15, 12, 12),
-	InputStroke = Color3.fromRGB(255, 50, 50),
-	PlaceholderColor = Color3.fromRGB(180, 140, 140)
+-- HXN Hub MM2 style theme (darker + more transparent)
+local RedBlackTheme = {
+    Name = "RedBlack",
+    
+    -- Darker backgrounds (#0a0a0a - #1a1a1a)
+    Accent = Color3.fromRGB(20, 20, 20),
+    Dialog = Color3.fromRGB(15, 15, 15),
+    Outline = Color3.fromRGB(255, 50, 50),
+    Text = Color3.fromRGB(240, 240, 240), -- slightly dimmed white
+    Placeholder = Color3.fromRGB(120, 40, 40),
+    Background = Color3.fromRGB(15, 15, 15), -- darker
+    Button = Color3.fromRGB(15, 15, 15), -- much darker
+    Icon = Color3.fromRGB(255, 70, 70),
+    Toggle = Color3.fromRGB(0, 200, 80), -- slightly darker
+    Slider = Color3.fromRGB(220, 0, 0), -- slightly darker
+    Checkbox = Color3.fromRGB(0, 200, 80), -- slightly darker
+    
+    -- Panels: darker with transparency
+    PanelBackground = Color3.fromRGB(25, 25, 25),
+    PanelBackgroundTransparency = 0.35, -- more transparent
+    
+    Primary = Color3.fromRGB(255, 0, 0),
+    SliderIcon = Color3.fromRGB(180, 45, 45),
+    
+    -- Tab styling - darker
+    TabBackground = Color3.fromRGB(25, 25, 25),
+    TabBackgroundHover = Color3.fromRGB(35, 35, 35),
+    TabBackgroundHoverTransparency = 0.4,
+    TabBackgroundActive = Color3.fromRGB(50, 20, 20),
+    TabBackgroundActiveTransparency = 0.35,
+    TabText = Color3.fromRGB(240, 240, 240),
+    TabTextTransparency = 0.3,
+    TabTextTransparencyActive = 0,
+    TabIcon = Color3.fromRGB(255, 70, 70),
+    TabIconTransparency = 0.4,
+    TabIconTransparencyActive = 0,
+    TabBorderTransparency = 0.5,
+    TabBorderTransparencyActive = 0.4,
+    TabBorder = Color3.fromRGB(255, 50, 50),
+    
+    -- Element styling - darker
+    ElementBackground = Color3.fromRGB(15, 15, 15), -- much darker
+    ElementBackgroundTransparency = 0.3, -- more transparent
+    ElementTitle = Color3.fromRGB(240, 240, 240),
+    ElementDesc = Color3.fromRGB(180, 180, 180),
+    ElementIcon = Color3.fromRGB(255, 70, 70),
+    
+    -- Window styling
+    WindowBackground = Color3.fromRGB(15, 15, 15),
+    WindowTopbarTitle = Color3.fromRGB(240, 240, 240),
+    WindowTopbarAuthor = Color3.fromRGB(255, 70, 70),
+    WindowTopbarIcon = Color3.fromRGB(255, 70, 70),
+    WindowTopbarButtonIcon = Color3.fromRGB(255, 70, 70),
+    
+    -- Additional
+    Hover = Color3.fromRGB(50, 20, 20),
+    LabelBackground = Color3.fromRGB(25, 25, 25),
+    LabelBackgroundTransparency = 0.5,
+    
+    -- Notification
+    Notification = Color3.fromRGB(25, 25, 25),
+    NotificationTitle = Color3.fromRGB(240, 240, 240),
+    NotificationContent = Color3.fromRGB(180, 180, 180),
+    NotificationDuration = Color3.fromRGB(0, 255, 100),
+    NotificationBorder = Color3.fromRGB(0, 255, 100),
+    NotificationBorderTransparency = 0.4,
+    
+    -- Tooltip
+    Tooltip = Color3.fromRGB(15, 15, 15),
+    TooltipText = Color3.fromRGB(240, 240, 240),
+    TooltipSecondary = Color3.fromRGB(0, 255, 100),
+    TooltipSecondaryText = Color3.fromRGB(255, 255, 255),
+    
+    -- Search bar
+    WindowSearchBarBackground = Color3.fromRGB(35, 35, 35),
+    SearchBarBorder = Color3.fromRGB(255, 50, 50),
+    SearchBarBorderTransparency = 0.5,
 }
 
-local Window = Rayfield:CreateWindow({
-   Name = "MM2",
-   LoadingTitle = "MM2",
-   LoadingSubtitle = "by hxneey",
-   ConfigurationSaving = {
-      Enabled = false,
-      FolderName = nil, -- Create a custom folder for your hub/game
-      FileName = "HXN"
-   },
-   Discord = {
-      Enabled = false,
-      Invite = "noinvitelink", -- The Discord invite code, do not include discord.gg/. E.g. discord.gg/ABCD would be ABCD
-      RememberJoins = true -- Set this to false to make them join the discord every time they load it up
-   },
-   KeySystem = false, -- Set this to true to use our key system
-   KeySettings = {
-      Title = "Untitled",
-      Subtitle = "Key System",
-      Note = "No method of obtaining the key is provided",
-      FileName = "Key", -- It is recommended to use something unique as other scripts using Rayfield may overwrite your key file
-      SaveKey = true, -- The user's key will be saved, but if you change the key, they will be unable to use your script
-      GrabKeyFromSite = false, -- If this is true, set Key below to the RAW site you would like Rayfield to get the key from
-      Key = {"Hello"} -- List of keys that will be accepted by the system, can be RAW file links (pastebin, github etc) or simple strings ("hello","key22")
-   },
-   Resizable = true,
-   ResizeCorner = true,
-   Theme = CustomTheme
+-- Add the custom theme
+WindUI:AddTheme(RedBlackTheme)
+
+print("[HXN] Creating window...")
+local Window = WindUI:CreateWindow({
+    Title  = "HXN Hub MM2",
+    Icon   = "solar:settings-bold",  -- Fallback icon while you fix your image
+    Author = "by hxneey",
+    Folder = "HXN_MM2",            -- this fixes the makefolder error
+    Size   = UDim2.fromOffset(580, 490),
+    Theme  = "RedBlack",  -- HXN Hub style theme
+    Transparent = true,   -- Blur, background shows through
+    BackgroundImageTransparency = 0.65,  -- more transparent
+    Acrylic = true,  -- Glass blur effect like HXN Hub
+    User = {
+        Enabled = true,
+        Anonymous = false,
+        Callback = function()
+            print("[HXN] User profile clicked!")
+        end,
+    },
 })
+
+-- Set a toggle key so you can reopen the UI after closing it
+Window:SetToggleKey(Enum.KeyCode.K)
+
+
+--[[
+  HOW TO CHANGE THE LOGO TO YOUR OWN PHOTO:
+  
+  1. ROBLOX ASSET (easiest):
+     - Upload your image to Roblox (Create > Decals or use a decal from the library)
+     - Get the asset ID from the URL (e.g. roblox.com/library/123456789)
+     - Change the Icon line above to: Icon = "rbxassetid://YOUR_ASSET_ID"
+  
+  2. IMAGE URL:
+     - Host your image online (Imgur, Discord CDN, etc.)
+     - Use: Icon = "https://your-image-url.com/photo.png"
+  
+  3. LUCIDE ICON (built-in):
+     - Use icon names like: Icon = "sparkles" or Icon = "user" or Icon = "zap"
+]]
 
 -- Store window and initialize task tracking
 _G.HXN_WINDOW = Window
@@ -154,24 +255,35 @@ _G.HXN_CONNECTIONS = {}
 
 print("[HXN] Window created successfully!")
 
--- Add mirror glass effect and red glow outlines
+-- HXN Hub style tags: green version badge, red accents
+Window:Tag({
+    Title = "Version 7.1.2",
+    Color = Color3.fromRGB(0, 255, 100),  -- Green pill badge
+    Border = true,
+})
+Window:Tag({
+    Title = "Premium",
+    Color = Color3.fromRGB(255, 80, 80),
+})
+Window:Tag({
+    Title = "Updated",
+    Color = Color3.fromRGB(0, 255, 100),  -- Green status
+})
+
+-- HXN Hub style: subtle blur, dark grey panels, soft red accents
 spawn(function()
 	task.wait(0.3)
 	
 	pcall(function()
 		local CoreGui = game:GetService("CoreGui")
-		local RayfieldGui = CoreGui:FindFirstChild("Rayfield")
+		local WindUIGui = CoreGui:FindFirstChild("WindUI")
 		
-		if RayfieldGui then
-			-- Find all UI elements and add glow effect
-			local function addGlowToElements(parent)
-				for _, element in ipairs(parent:GetDescendants()) do
-					if element:IsA("GuiObject") and (element:IsA("TextButton") or element:IsA("Frame")) then
-						-- Make slightly transparent for mirror effect
-						if element.BackgroundTransparency ~= 1 then
-							element.BackgroundTransparency = math.min(element.BackgroundTransparency + 0.05, 0.7)
-						end
-						
+		if WindUIGui then
+			-- Optimized stroke on elements (only buttons, less intensive)
+			local function addStrokeToElements(parent)
+				-- Only process immediate children to avoid massive iteration
+				local function processElement(element)
+					if element:IsA("TextButton") or element:IsA("ImageButton") then
 						-- Remove old strokes
 						for _, child in ipairs(element:GetChildren()) do
 							if child:IsA("UIStroke") then
@@ -179,49 +291,90 @@ spawn(function()
 							end
 						end
 						
-						-- Add red glow stroke
+						-- Add bright red accent stroke
 						local glow = Instance.new("UIStroke")
-						glow.Color = Color3.fromRGB(255, 50, 50)
-						glow.Thickness = 1.5
-						glow.Transparency = 0.4
+						glow.Color = Color3.fromRGB(255, 0, 0)
+						glow.Thickness = 6
+						glow.Transparency = 0
 						glow.Parent = element
+						
+						-- Add glow shadow effect
+						local glowShadow = Instance.new("UIStroke")
+						glowShadow.Color = Color3.fromRGB(255, 150, 150)
+						glowShadow.Thickness = 2
+						glowShadow.Transparency = 0.3
+						glowShadow.Parent = element
+						
+						element.MouseEnter:Connect(function()
+							glow.Thickness = 8
+							glowShadow.Transparency = 0
+						end)
+						element.MouseLeave:Connect(function()
+							glow.Thickness = 6
+							glowShadow.Transparency = 0.3
+						end)
 					end
 				end
-			end
-			
-			addGlowToElements(RayfieldGui)
-			
-			-- Add a shadow/glow effect to main window
-			local mainFrame = RayfieldGui:FindFirstChildWhichIsA("Frame")
-			if mainFrame and mainFrame.Name == "MainFrame" or #mainFrame:GetChildren() > 5 then
-				-- Add transparency for mirror effect
-				mainFrame.BackgroundTransparency = 0.1
 				
-				-- Try to add glow
-				for _, child in ipairs(mainFrame:GetChildren()) do
-					if child:IsA("UIStroke") then
-						child.Color = Color3.fromRGB(255, 50, 50)
-						child.Thickness = 2
-						child.Transparency = 0.3
+				-- Process children recursively but limit depth
+				for _, child in ipairs(parent:GetChildren()) do
+					processElement(child)
+					for _, subchild in ipairs(child:GetChildren()) do
+						processElement(subchild)
 					end
 				end
 			end
 			
-			print("[HXN] Red glow and mirror glass effects applied!")
+			addStrokeToElements(WindUIGui)
+			
+			-- Main window: dark grey, subtle border
+			local mainFrame = WindUIGui:FindFirstChildWhichIsA("Frame")
+			if mainFrame and (mainFrame.Name == "MainFrame" or #mainFrame:GetChildren() > 5) then
+				mainFrame.BackgroundTransparency = 0.1 -- slight transparency for blur
+				
+				local windowGlow = Instance.new("UIStroke")
+				windowGlow.Color = Color3.fromRGB(255, 50, 50)
+				windowGlow.Thickness = 2
+				windowGlow.Transparency = 0.2
+				windowGlow.Parent = mainFrame
+				
+				local corner = Instance.new("UICorner")
+				corner.CornerRadius = UDim.new(0, 12)
+				corner.Parent = mainFrame
+				
+				-- Dark gradient
+				local gradient = Instance.new("UIGradient")
+				gradient.Color = ColorSequence.new{
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 12, 12)),
+					ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 22, 22))
+				}
+				gradient.Rotation = 90
+				gradient.Parent = mainFrame
+			end
+			
+			-- Darker main frame with more transparency
+			if mainFrame then
+				mainFrame.BackgroundTransparency = 0.25
+			end
+			
+			print("[HXN] HXN Hub style UI applied!")
 		end
 	end)
 end)
 
 -- create tabs for each category
-local CharacterTab = Window:CreateTab("🧍 Character", nil)
-local TeleportTab = Window:CreateTab("✈️ Teleport", nil)
-local CombatTab = Window:CreateTab("⚔️ Combat", nil)
-local TrollingTab = Window:CreateTab("😈 Trolling", nil)
-local ESPTab = Window:CreateTab("👁️ ESP", nil)
-local VisualTab = Window:CreateTab("🎨 Visual", nil)
-local AutofarmTab = Window:CreateTab("🌾 Autofarm", nil)
-local EmoteTab = Window:CreateTab("🎭 Emotes", nil)
-local OtherTab = Window:CreateTab("🔧 Other", nil)
+local CharacterTab = Window:Tab({Title = "Character", Icon = "user"})
+local TeleportTab = Window:Tab({Title = "Teleport", Icon = "plane"})
+local CombatTab = Window:Tab({Title = "Combat", Icon = "sword"})
+local TrollingTab = Window:Tab({Title = "Trolling", Icon = "zap"})
+local ESPTab = Window:Tab({Title = "ESP", Icon = "eye"})
+local VisualTab = Window:Tab({Title = "Visual", Icon = "palette"})
+local AutofarmTab = Window:Tab({Title = "Autofarm", Icon = "sprout"})
+local EmoteTab = Window:Tab({Title = "Emotes", Icon = "smile"})
+local OtherTab = Window:Tab({Title = "Other", Icon = "settings"})
+
+-- Select Character tab by default when script loads
+CharacterTab:Select()
 
 -- Function to find the murderer (player with Knife)
 local function findMurderer()
@@ -271,6 +424,10 @@ local TargetMurderer = nil
 -- Function to hook GunBeam creation for silent aim
 local function HookGunBeam()
 	if _G.HXN_GunBeamHooked then return end
+	if not hookmetamethod then 
+		print("[HXN] hookmetamethod not available, skipping GunBeam hook")
+		return 
+	end
 	_G.HXN_GunBeamHooked = true
 
 	-- Hook into the WeaponEvents GunBeam firing
@@ -307,54 +464,30 @@ local function shootMurdererWithGunBeam()
 
 	TargetMurderer = findMurderer()
 	if not TargetMurderer or not TargetMurderer.Character then
-		Rayfield:Notify({
-			Title = "Error",
-			Content = "Murderer not found!",
-			Duration = 2,
-			Image = 4483345998,
-		})
 		return
 	end
 
 	-- Get gun tool
 	local gunTool = getGunTool()
 	if not gunTool then
-		Rayfield:Notify({
-			Title = "Error",
-			Content = "Gun not found in inventory!",
-			Duration = 2,
-			Image = 4483345998,
-		})
 		return
 	end
 
 	-- Equip the gun
 	if gunTool.Parent == localPlayer:FindFirstChildOfClass("Backpack") then
 		gunTool.Parent = localPlayer.Character
-		-- No delay for maximum speed
 	end
 
 	print("[HXN] Equipping gun and aiming at: " .. TargetMurderer.Name)
 
 	-- Activate silent aim
 	GunBeamAutoAimEnabled = true
-	-- No delay for maximum speed
-
-	-- Point camera at target for aiming
-	local TargetPart = TargetMurderer.Character:FindFirstChild("HumanoidRootPart") or TargetMurderer.Character:FindFirstChild("Head")
-	if TargetPart then
-		workspace.CurrentCamera.CFrame = CFrame.new(localPlayer.Character:FindFirstChild("HumanoidRootPart").Position, TargetPart.Position)
-	end
-
-	-- No delay for maximum speed
 
 	-- Fire the gun (activate it)
 	pcall(function()
 		gunTool:Activate()
 		print("[HXN] GunBeam auto-aim shot fired at murderer!")
 	end)
-
-	-- No delay for maximum speed
 
 	-- clear target (toggle remains on until user disables)
 	TargetMurderer = nil
@@ -381,41 +514,280 @@ end
 -- Install GunBeam hook on startup
 HookGunBeam()
 
--- SHERIFF COMBAT SECTION
-local SheriffSection = CombatTab:CreateSection("Sheriff Combat")
+-- SHERIFF SECTION
+CombatTab:Section({Title = "Sheriff"})
 
-local AutoShootToggle = CombatTab:CreateToggle({
-	Name = "Auto Shoot Murderer",
-	CurrentValue = false,
-	Flag = "AutoShootMurderer",
-	Callback = function(Value)
-		GunBeamAutoAimEnabled = Value
-		if Value then
-			print("[HXN] GunBeam Auto Shoot enabled! Press Q to shoot.")
-			Rayfield:Notify({
-				Title = "GunBeam Silent Aim Enabled",
-				Content = "Press Q to instantly shoot the murderer with auto-aim",
-				Duration = 3,
-				Image = 4483345998,
-			})
-		else
-			print("[HXN] GunBeam Auto Shoot disabled.")
-			GunBeamAutoAimEnabled = false
+local shootMurdererEnabled = true
+
+CombatTab:Keybind({
+	Title = "Shoot Murderer",
+	Value = "Q",
+	Callback = function()
+		if not shootMurdererEnabled then return end
+		local localPlayer = Players.LocalPlayer
+		local murderer = findMurderer()
+		if not murderer or not murderer.Character then return end
+		
+		if not localPlayer.Character:FindFirstChild("Gun") then
+			local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+			if backpack and backpack:FindFirstChild("Gun") then
+				local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+				hum:EquipTool(backpack:FindFirstChild("Gun"))
+			end
+		end
+		
+		local gunTool = localPlayer.Character:FindFirstChild("Gun")
+		if gunTool and murderer.Character:FindFirstChild("HumanoidRootPart") then
+			local args = {
+				CFrame.new(localPlayer.Character.RightHand.Position),
+				CFrame.new(murderer.Character.HumanoidRootPart.Position)
+			}
+			gunTool:WaitForChild("Shoot"):FireServer(unpack(args))
 		end
 	end,
 })
 
--- Keybind listener for Q key
-local UserInputService = game:GetService("UserInputService")
-local shootConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
+CombatTab:Toggle({
+	Title = "Shoot Murderer Enabled",
+	Value = true,
+	Callback = function(Value)
+		shootMurdererEnabled = Value
+	end,
+})
 
-	if input.KeyCode == Enum.KeyCode.Q and GunBeamAutoAimEnabled then
-		shootMurdererWithGunBeam()
-	end
-end)
+-- MURDERER SECTION
+CombatTab:Section({Title = "Murderer"})
 
-table.insert(_G.HXN_CONNECTIONS, shootConnection)
+local knifeThrowClosestEnabled = true
+
+CombatTab:Keybind({
+	Title = "Knife Throw to Closest",
+	Value = "E",
+	Callback = function()
+		if not knifeThrowClosestEnabled then return end
+		local localPlayer = Players.LocalPlayer
+		if not localPlayer.Character then return end
+		local localHRP = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+		
+		local NearestPlayer = nil
+		local shortestDistance = math.huge
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= localPlayer and player.Character then
+				local otherHRP = player.Character:FindFirstChild("HumanoidRootPart")
+				if otherHRP and localHRP then
+					local distance = (localHRP.Position - otherHRP.Position).Magnitude
+					if distance < shortestDistance then
+						shortestDistance = distance
+						NearestPlayer = player
+					end
+				end
+			end
+		end
+		
+		if not NearestPlayer then return end
+		
+		if not localPlayer.Character:FindFirstChild("Knife") then
+			local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+			if backpack and backpack:FindFirstChild("Knife") then
+				local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+				hum:EquipTool(backpack:FindFirstChild("Knife"))
+			end
+		end
+		
+		local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+		if knifeTool and NearestPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			local args = {
+				CFrame.new(localPlayer.Character.RightHand.Position),
+				CFrame.new(NearestPlayer.Character.HumanoidRootPart.Position)
+			}
+			pcall(function()
+				knifeTool:WaitForChild("Events"):WaitForChild("KnifeThrown"):FireServer(unpack(args))
+			end)
+		end
+	end,
+})
+
+CombatTab:Toggle({
+	Title = "Knife Throw to Closest Enabled",
+	Value = true,
+	Callback = function(Value)
+		knifeThrowClosestEnabled = Value
+	end,
+})
+
+local autoKnifeThrowEnabled = false
+CombatTab:Toggle({
+	Title = "Auto Knife Throw",
+	Value = false,
+	Callback = function(Value)
+		autoKnifeThrowEnabled = Value
+		if Value then
+			task.spawn(function()
+				while autoKnifeThrowEnabled do
+					task.wait(1.5)
+					if autoKnifeThrowEnabled then
+						local localPlayer = Players.LocalPlayer
+						if localPlayer.Character then
+							local NearestPlayer = nil
+							local shortestDistance = math.huge
+							local localHRP = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+							for _, player in ipairs(Players:GetPlayers()) do
+								if player ~= localPlayer and player.Character then
+									local otherHRP = player.Character:FindFirstChild("HumanoidRootPart")
+									if otherHRP and localHRP then
+										local distance = (localHRP.Position - otherHRP.Position).Magnitude
+										if distance < shortestDistance then
+											shortestDistance = distance
+											NearestPlayer = player
+										end
+									end
+								end
+							end
+							
+							if NearestPlayer and NearestPlayer.Character then
+								if not localPlayer.Character:FindFirstChild("Knife") then
+									local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+									if backpack and backpack:FindFirstChild("Knife") then
+										local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+										hum:EquipTool(backpack:FindFirstChild("Knife"))
+									end
+								end
+								
+								local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+								if knifeTool then
+									local nearestHRP = NearestPlayer.Character:FindFirstChild("HumanoidRootPart")
+									if nearestHRP then
+										local args = {
+											CFrame.new(localPlayer.Character.RightHand.Position),
+											CFrame.new(nearestHRP.Position)
+										}
+										pcall(function()
+											knifeTool:WaitForChild("Events"):WaitForChild("KnifeThrown"):FireServer(unpack(args))
+										end)
+									end
+								end
+							end
+						end
+					end
+				end
+			end)
+		end
+	end,
+})
+
+CombatTab:Button({
+	Title = "Kill Closest Player",
+	Callback = function()
+		local localPlayer = Players.LocalPlayer
+		if not localPlayer.Character then return end
+		
+		local NearestPlayer = nil
+		local shortestDistance = math.huge
+		local localHRP = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= localPlayer and player.Character then
+				local otherHRP = player.Character:FindFirstChild("HumanoidRootPart")
+				if otherHRP and localHRP then
+					local distance = (localHRP.Position - otherHRP.Position).Magnitude
+					if distance < shortestDistance then
+						shortestDistance = distance
+						NearestPlayer = player
+					end
+				end
+			end
+		end
+		
+		if not NearestPlayer then return end
+		
+		if not localPlayer.Character:FindFirstChild("Knife") then
+			local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+			if backpack and backpack:FindFirstChild("Knife") then
+				local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+				hum:EquipTool(backpack:FindFirstChild("Knife"))
+			end
+		end
+		
+		local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+		if knifeTool and NearestPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			local nearestHRP = NearestPlayer.Character:FindFirstChild("HumanoidRootPart")
+			nearestHRP.Anchored = true
+			nearestHRP.CFrame = localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame + localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame.LookVector * 2
+			task.wait(0.1)
+			local args = {[1] = "Slash"}
+			knifeTool:WaitForChild("Stab"):FireServer(unpack(args))
+		end
+	end,
+})
+
+CombatTab:Button({
+	Title = "Kill Everyone",
+	Callback = function()
+		local localPlayer = Players.LocalPlayer
+		if not localPlayer.Character then return end
+		
+		if not localPlayer.Character:FindFirstChild("Knife") then
+			local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+			if backpack and backpack:FindFirstChild("Knife") then
+				local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+				hum:EquipTool(backpack:FindFirstChild("Knife"))
+			end
+		end
+		
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player.Character and player ~= localPlayer then
+				local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Anchored = true
+					hrp.CFrame = localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame + localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame.LookVector * 1
+				end
+			end
+		end
+		
+		local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+		if knifeTool then
+			local args = {[1] = "Slash"}
+			knifeTool:WaitForChild("Stab"):FireServer(unpack(args))
+		end
+	end,
+})
+
+local killAuraEnabled = false
+CombatTab:Toggle({
+	Title = "Murderer Kill Aura",
+	Value = false,
+	Callback = function(Value)
+		killAuraEnabled = Value
+		if Value then
+			task.spawn(function()
+				while killAuraEnabled do
+					task.wait(0.1)
+					local localPlayer = Players.LocalPlayer
+					if localPlayer.Character then
+						for _, player in ipairs(Players:GetPlayers()) do
+							if player.Character and player ~= localPlayer then
+								local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+								local localHRP = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+								if hrp and localHRP then
+									if (hrp.Position - localHRP.Position).Magnitude < 7 then
+										hrp.Anchored = true
+										hrp.CFrame = localHRP.CFrame + localHRP.CFrame.LookVector * 2
+										task.wait(0.1)
+										local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+										if knifeTool then
+											local args = {[1] = "Slash"}
+											knifeTool:WaitForChild("Stab"):FireServer(unpack(args))
+										end
+										return
+									end
+								end
+							end
+						end
+					end
+				end
+			end)
+		end
+	end,
+})
 
 
 local AntiAfkEnabled = true
@@ -443,7 +815,13 @@ local flingConnections = {}
 
 local function applyAntiFlingToPart(v)
     if not v or not v:IsA("Part") then return end
-    if v.Parent == game.Players.LocalPlayer.Character then return end
+    
+    -- NEVER apply to local player's character
+    local localPlayer = game.Players.LocalPlayer
+    if v.Parent and localPlayer and localPlayer.Character and v.Parent:IsDescendantOf(localPlayer.Character) then
+        return
+    end
+    
     if v.Name ~= "HumanoidRootPart" then return end
     if v.Anchored then return end
 
@@ -488,12 +866,11 @@ end
 --------------------------------------------------
 
 -- ANTI-EXPLOIT SECTION
-local AntiExploitSection = OtherTab:CreateSection("Anti-Exploit")
+OtherTab:Section({Title = "Anti-Exploit"})
 
-local Button = OtherTab:CreateToggle({
-   Name = "Anti-AFK",
-   CurrentValue = true,
-   Flag = "AntiAFKToggle",
+OtherTab:Toggle({
+   Title = "Anti-AFK",
+   Value = true,
    Callback = function(val)
         AntiAfkEnabled = val
         if val then
@@ -509,10 +886,9 @@ if AntiAfkEnabled then
     setupAntiAfk()
 end
 
-local Button = OtherTab:CreateToggle({
-   Name = "Anti-Fling",
-   CurrentValue = false,
-   Flag = "AntiFlingToggle",
+OtherTab:Toggle({
+   Title = "Anti-Fling",
+   Value = false,
    Callback = function(val)
         if val then
             startAntiFling()
@@ -522,11 +898,61 @@ local Button = OtherTab:CreateToggle({
    end,
 })
 
--- UTILITIES SECTION
-local UtilitiesSection = OtherTab:CreateSection("Utilities")
+-- ROUND TIMER SECTION
+OtherTab:Section({Title = "Round Timer"})
 
-local Button = OtherTab:CreateButton({
-   Name = "Inf Yield",
+local roundTimerEnabled = false
+local roundTimerLabel = nil
+
+local function secondsToMinutes(seconds)
+	if seconds == -1 then return "" end
+	local minutes = math.floor(seconds / 60)
+	local remainingSeconds = seconds % 60
+	return string.format("%dm %ds", minutes, remainingSeconds)
+end
+
+OtherTab:Toggle({
+	Title = "Round Timer",
+	Value = false,
+	Callback = function(Value)
+		roundTimerEnabled = Value
+		if Value then
+			roundTimerLabel = Instance.new("TextLabel")
+			roundTimerLabel.Parent = game:GetService("CoreGui"):FindFirstChild("WindUI")
+			roundTimerLabel.BackgroundTransparency = 1
+			roundTimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+			roundTimerLabel.TextScaled = true
+			roundTimerLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+			roundTimerLabel.Position = UDim2.fromScale(0.5, 0.15)
+			roundTimerLabel.Size = UDim2.fromOffset(200, 50)
+			roundTimerLabel.Font = Enum.Font.GothamBold
+			
+			task.spawn(function()
+				while roundTimerEnabled do
+					task.wait(0.5)
+					local timeLeft = 0
+					pcall(function()
+						timeLeft = game:GetService("ReplicatedStorage").Remotes.Extras.GetTimer:InvokeServer()
+					end)
+					if roundTimerLabel then
+						roundTimerLabel.Text = secondsToMinutes(timeLeft)
+					end
+				end
+			end)
+		else
+			if roundTimerLabel then
+				roundTimerLabel:Destroy()
+				roundTimerLabel = nil
+			end
+		end
+	end,
+})
+
+-- UTILITIES SECTION
+OtherTab:Section({Title = "Utilities"})
+
+OtherTab:Button({
+   Title = "Inf Yield",
    Callback = function()
         local success, result = pcall(function()
             local script = game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source")
@@ -534,11 +960,6 @@ local Button = OtherTab:CreateButton({
         end)
         
         if not success then
-            Rayfield:Notify({
-                Title = "Error",
-                Content = "Inf Yield Error: " .. tostring(result),
-                Duration = 5,
-            })
             print("[HXN] Inf Yield Error: " .. tostring(result))
         end
    end,
@@ -549,24 +970,10 @@ if GunDropNotifyEnabled == nil then
 	GunDropNotifyEnabled = false
 end
 
-Rayfield:Notify({
-   Title = "You executed the script",
-   Content = "Very cool gui",
-   Duration = 5,
-   Image = 13047715178,
-   Actions = { -- Notification Buttons
-      Ignore = {
-         Name = "Okay!",
-         Callback = function()
-         print("The user tapped Okay!")
-         print("[HXN] Script loaded successfully!")
-      end
-   },
-},
-})
+-- Notification disabled (Wind UI incompatible)
 
-local Button = EmoteTab:CreateButton({
-   Name = "Emotes",
+EmoteTab:Button({
+   Title = "Emotes",
    Callback = function()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/Joystickplays/AFEM/main/max/afemmax.lua"))()
    end,
@@ -577,15 +984,15 @@ local Button = EmoteTab:CreateButton({
 --------------------------------------------------
 
 -- PERFORMANCE SECTION
-local PerformanceSection = CharacterTab:CreateSection("Performance")
+CharacterTab:Section({Title = "Performance"})
 
 -- FPS and Ping Tracking Variables
 local fps = 0
 local lastTime = tick()
 local currentPing = 0
 
--- FPS calculation
-game:GetService("RunService").RenderStepped:Connect(function()
+-- FPS calculation (moved to Heartbeat for better performance)
+game:GetService("RunService").Heartbeat:Connect(function()
     fps = math.floor(1 / (tick() - lastTime))
     lastTime = tick()
 end)
@@ -599,33 +1006,33 @@ local function getPing()
     return currentPing
 end
 
--- Performance Monitor Label
-local PerformanceLabel = CharacterTab:CreateLabel("FPS: Loading...\nPing: Loading...")
+-- Performance Monitor Paragraph
+local PerformanceLabel = CharacterTab:Paragraph({
+    Title = "FPS & Ping",
+    Desc = "FPS: 0\nNetwork Ping: 0 ms"
+})
 
 -- Update performance label continuously
 local performanceTaskId = task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.5)
         getPing()
-        local fpsStatus = fps < 30 and "🔴 " or "🟢 "
-        local pingStatus = currentPing > 200 and "🔴 " or "🟢 "
-        local performanceText = fpsStatus .. "FPS: " .. tostring(fps) .. 
-                                "\n" .. pingStatus .. "Ping: " .. tostring(currentPing) .. " ms"
-        PerformanceLabel:Set(performanceText)
+        if PerformanceLabel then 
+            PerformanceLabel:SetDesc("FPS: " .. tostring(fps) .. "\nNetwork Ping: " .. tostring(currentPing) .. " ms")
+        end
     end
 end)
 table.insert(_G.HXN_TASKS, performanceTaskId)
 
 -- MOVEMENT SECTION
-local MovementSection = CharacterTab:CreateSection("Movement")
+CharacterTab:Section({Title = "Movement"})
 
 local currentWalkSpeed = 16
 local walkSpeedEnabled = false
 
-local WalkSpeedToggle = CharacterTab:CreateToggle({
-   Name = "Enable WalkSpeed Changer",
-   CurrentValue = false,
-   Flag = "WalkSpeedEnable",
+CharacterTab:Toggle({
+   Title = "Enable WalkSpeed Changer",
+   Value = false,
    Callback = function(Value)
         walkSpeedEnabled = Value
         if Value then
@@ -636,13 +1043,14 @@ local WalkSpeedToggle = CharacterTab:CreateToggle({
    end,
 })
 
-local WalkSpeedSlider = CharacterTab:CreateSlider({
-   Name = "WalkSpeed Slider",
-   Range = {1, 350},
-   Increment = 1,
-   Suffix = "Speed",
-   CurrentValue = 16,
-   Flag = "sliderws",
+local WalkSpeedSlider = CharacterTab:Slider({
+   Title = "WalkSpeed Slider",
+   Step = 1,
+   Value = {
+       Min = 1,
+       Max = 350,
+       Default = 16,
+   },
    Callback = function(Value)
         currentWalkSpeed = Value
         if walkSpeedEnabled then
@@ -651,25 +1059,39 @@ local WalkSpeedSlider = CharacterTab:CreateSlider({
    end,
 })
 
-local Input = CharacterTab:CreateInput({
-   Name = "Quick WalkSpeed",
-   PlaceholderText = "1-500",
-   RemoveTextAfterFocusLost = true,
+-- Add scroll wheel support for WalkSpeed slider
+if WalkSpeedSlider and WalkSpeedSlider.Instance then
+    WalkSpeedSlider.Instance.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            local currentValue = currentWalkSpeed or 16
+            local newValue = currentValue + (input.Position.Z > 0 and 1 or -1)
+            newValue = math.clamp(newValue, 1, 350)
+            WalkSpeedSlider:SetValue(newValue)
+        end
+    end)
+end
+
+CharacterTab:Input({
+   Title = "Quick WalkSpeed",
+   Value = "",
+   Placeholder = "1-500",
    Callback = function(Text)
-        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = (Text)
+        local speed = tonumber(Text)
+        if speed then
+            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = speed
+        end
    end,
 })
 
 -- JUMP POWER SECTION
-local JumpSection = CharacterTab:CreateSection("Jump")
+CharacterTab:Section({Title = "Jump"})
 
 local currentJumpPower = 50
 local jumpPowerEnabled = false
 
-local JumpPowerToggle = CharacterTab:CreateToggle({
-   Name = "Enable JumpPower Changer",
-   CurrentValue = false,
-   Flag = "JumpPowerEnable",
+CharacterTab:Toggle({
+   Title = "Enable JumpPower Changer",
+   Value = false,
    Callback = function(Value)
         jumpPowerEnabled = Value
         if Value then
@@ -680,13 +1102,14 @@ local JumpPowerToggle = CharacterTab:CreateToggle({
    end,
 })
 
-local JumpPowerSlider = CharacterTab:CreateSlider({
-   Name = "JumpPower Slider",
-   Range = {1, 350},
-   Increment = 1,
-   Suffix = "Speed",
-   CurrentValue = 50,
-   Flag = "sliderjp",
+local JumpPowerSlider = CharacterTab:Slider({
+   Title = "JumpPower Slider",
+   Step = 1,
+   Value = {
+       Min = 1,
+       Max = 350,
+       Default = 50,
+   },
    Callback = function(Value)
         currentJumpPower = Value
         if jumpPowerEnabled then
@@ -695,8 +1118,20 @@ local JumpPowerSlider = CharacterTab:CreateSlider({
    end,
 })
 
+-- Add scroll wheel support for JumpPower slider
+if JumpPowerSlider and JumpPowerSlider.Instance then
+    JumpPowerSlider.Instance.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            local currentValue = currentJumpPower or 50
+            local newValue = currentValue + (input.Position.Z > 0 and 1 or -1)
+            newValue = math.clamp(newValue, 1, 350)
+            JumpPowerSlider:SetValue(newValue)
+        end
+    end)
+end
+
 -- CAMERA SECTION
-local CameraSection = CharacterTab:CreateSection("Camera")
+CharacterTab:Section({Title = "Camera"})
 
 local fov_enabled = false
 local fov_value = 70
@@ -708,28 +1143,40 @@ local function updateFOV()
     end
 end
 
-CharacterTab:CreateToggle({
-   Name = "Custom FOV",
-   CurrentValue = fov_enabled,
-   Flag = "FOVEnabled",
+CharacterTab:Toggle({
+   Title = "Custom FOV",
+   Value = false,
    Callback = function(val)
        fov_enabled = val
        updateFOV()
    end,
 })
 
-CharacterTab:CreateSlider({
-   Name = "FOV Value",
-   Range = {1, 120},
-   Increment = 1,
-   Suffix = "°",
-   CurrentValue = fov_value,
-   Flag = "FOVSlider",
+local FOVSlider = CharacterTab:Slider({
+   Title = "FOV Value",
+   Step = 1,
+   Value = {
+       Min = 1,
+       Max = 120,
+       Default = 70,
+   },
    Callback = function(val)
        fov_value = val
        updateFOV()
    end,
 })
+
+-- Add scroll wheel support for FOV slider
+if FOVSlider and FOVSlider.Instance then
+    FOVSlider.Instance.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            local currentValue = fov_value or 70
+            local newValue = currentValue + (input.Position.Z > 0 and 1 or -1)
+            newValue = math.clamp(newValue, 1, 120)
+            FOVSlider:SetValue(newValue)
+        end
+    end)
+end
 
 --// SETTINGS
 local OTHER_PLAYER_COLOR = Color3.fromRGB(0,255,0) -- Green for innocent
@@ -764,13 +1211,6 @@ local IsAtGun = false
 local GunDropNotifyEnabled = false
 local GunDropDetected = false
 local TracersEnabled = false
-local AutofarmEnabled = false
-local AutofarmType = "Teleport" -- "Teleport" or "Floating"
-local ContinueOnDeath = false
-local CollectHeight = 1 -- how many studs above coin to touch
-local AutofarmSpeed = 5
-local CoinCount = 0
-local LastCoinPosition = nil
 
 --// FLING VARIABLES
 local FlingActive = false
@@ -785,11 +1225,8 @@ getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
 -- Fling notification function
 local function FllingMessage(Title, Text, Time)
-    Rayfield:Notify({
-        Title = Title,
-        Text = Text,
-        Duration = Time or 5,
-    })
+    print("[Fling] " .. Title .. ": " .. Text)
+    -- Notifications disabled (Wind UI doesn't support Notify)
 end
 
 -- The fling function (adapted from KILASIK's Multi-Target Fling Exploit)
@@ -1059,12 +1496,6 @@ local function getCurrentMapName()
 	return "Unknown"
 end
 
--- Map positions - No longer needed, using spawn locations instead
--- local mapPositions = {
--- 	-- Example: ["MapName"] = Vector3.new(x, y, z)
--- 	-- Add your 30 maps here when you provide the positions
--- }
-
 local function teleportToLobby()
 	local player = Players.LocalPlayer
 	if not player or not player.Character then return end
@@ -1074,24 +1505,14 @@ local function teleportToLobby()
 	-- Find the Lobby model in Workspace
 	local lobby = workspace:FindFirstChild("Lobby")
 	if not lobby or not lobby:IsA("Model") then
-		Rayfield:Notify({
-			Title = "Lobby Not Found",
-			Content = "Lobby model not found in Workspace.",
-			Duration = 3,
-			Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 
 	-- Find the Spawns folder inside Lobby
 	local spawnsFolder = lobby:FindFirstChild("Spawns")
 	if not spawnsFolder then
-		Rayfield:Notify({
-			Title = "Lobby Spawns Not Found",
-			Content = "Spawns folder not found in Lobby.",
-			Duration = 3,
-			Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 
@@ -1104,12 +1525,7 @@ local function teleportToLobby()
 	end
 
 	if #spawnPoints == 0 then
-		Rayfield:Notify({
-			Title = "No Lobby Spawns",
-			Content = "No SpawnLocations found in Lobby/Spawns.",
-			Duration = 3,
-			Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 
@@ -1117,13 +1533,9 @@ local function teleportToLobby()
 	local chosenSpawn = spawnPoints[math.random(1, #spawnPoints)]
 	hrp.CFrame = chosenSpawn.CFrame + Vector3.new(0, 3, 0)
 
-	Rayfield:Notify({
-		Title = "Teleported",
-		Content = "Teleported to Lobby spawn!",
-		Duration = 2,
-		Image = 4483362458,
-	})
+	-- Notification disabled (Wind UI incompatible)
 end
+
 local function teleportToMap()
 	local player = Players.LocalPlayer
 	if not player or not player.Character then return end
@@ -1138,22 +1550,12 @@ local function teleportToMap()
 	end
 
 	if not map then
-		Rayfield:Notify({
-			Title = "Error",
-			Content = "No known map found in Workspace",
-			Duration = 3
-		})
 		return
 	end
 
 	-- Find its Spawns folder
 	local spawnsFolder = map:FindFirstChild("Spawns")
 	if not spawnsFolder then
-		Rayfield:Notify({
-			Title = "Error",
-			Content = "Spawns folder not found in " .. map.Name,
-			Duration = 3
-		})
 		return
 	end
 
@@ -1166,11 +1568,6 @@ local function teleportToMap()
 	end
 
 	if #spawnPoints == 0 then
-		Rayfield:Notify({
-			Title = "Error",
-			Content = "No spawn points found in " .. map.Name,
-			Duration = 3
-		})
 		return
 	end
 
@@ -1178,25 +1575,17 @@ local function teleportToMap()
 	local chosenSpawn = spawnPoints[math.random(1, #spawnPoints)]
 	hrp.CFrame = chosenSpawn.CFrame + Vector3.new(0, 3, 0)
 
-	Rayfield:Notify({
-		Title = "Teleported",
-		Content = "Teleported to " .. map.Name .. " spawn!",
-		Duration = 2
-	})
 end
+
 local function teleportToSecretPlace()
 	local player = Players.LocalPlayer
 	if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
 		-- Teleport to secret place
 		player.Character.HumanoidRootPart.CFrame = CFrame.new(319, 537, 89)
-		Rayfield:Notify({
-		   Title = "Teleported",
-		   Content = "Teleported to Secret Place!",
-		   Duration = 2,
-		   Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 	end
 end
+
 --------------------------------------------------
 -- GUN DISPLAY HANDLER
 --------------------------------------------------
@@ -1587,13 +1976,14 @@ local LocalPlayer = Players.LocalPlayer
 local tracerLines = _G.HXN_TRACERS
 
 _G.HXN_TRACER_LOOP = game:GetService("RunService").RenderStepped:Connect(function()
+	if not TracersEnabled then
+		for player, line in pairs(tracerLines) do
+			line.Visible = false
+		end
+		return
+	end
 
 	for player, line in pairs(tracerLines) do
-		if not TracersEnabled then
-			line.Visible = false
-			continue
-		end
-		
 		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
 			
 			local root = player.Character.HumanoidRootPart
@@ -1655,10 +2045,15 @@ end)
 --------------------------------------------------
 --// VISUAL TAB - FULL SKY / EFFECTS SYSTEM
 --------------------------------------------------
-VisualTab:CreateSection("Sky Settings")
+VisualTab:Section({Title = "Sky Settings"})
 
 -- Stores the current applied sky
 local currentSky
+
+-- Function to get available sky options
+local function GetSkyOptions()
+    return {"Default", "Aesthetic", "Night", "MC", "Pink"}
+end
 
 -- Function to apply a sky by name
 local function applySky(skyName)
@@ -1710,14 +2105,17 @@ local function applySky(skyName)
     currentSky = sky
 end
 
--- DROPDOWN: select main sky
-local SkyDropdown = VisualTab:CreateDropdown({
-    Name = "Select Sky",
-    Options = {"Default", "Aesthetic", "Night", "MC", "Pink"},
-    CurrentOption = {"Default"},
-    Flag = "SkySelector",
+-- Dropdown for sky selection
+local SkyDropdown = VisualTab:Dropdown({
+    Title = "Select Sky",
+    Values = {"Default", "Aesthetic", "Night", "MC", "Pink"},
+    Value = "Default",
+    Multi = false,
+    AllowNone = false,
     Callback = function(option)
-        applySky(option[1])
+        if option then
+            applySky(option)
+        end
     end
 })
 
@@ -1727,10 +2125,9 @@ local BloomEffect
 local ColorCorrection
 
 -- Blur toggle
-VisualTab:CreateToggle({
-    Name = "Enable Blur",
-    CurrentValue = false,
-    Flag = "SkyBlur",
+VisualTab:Toggle({
+    Title = "Enable Blur",
+    Value = false,
     Callback = function(value)
         if value then
             if not BlurEffect then
@@ -1748,10 +2145,9 @@ VisualTab:CreateToggle({
 })
 
 -- Bloom toggle (Neon-like glow)
-VisualTab:CreateToggle({
-    Name = "Enable Bloom",
-    CurrentValue = false,
-    Flag = "SkyBloom",
+VisualTab:Toggle({
+    Title = "Enable Bloom",
+    Value = false,
     Callback = function(value)
         if value then
             if not BloomEffect then
@@ -1770,10 +2166,9 @@ VisualTab:CreateToggle({
 })
 
 -- Color correction toggle
-VisualTab:CreateToggle({
-    Name = "Enable Color Correction",
-    CurrentValue = false,
-    Flag = "SkyColorCorrection",
+VisualTab:Toggle({
+    Title = "Enable Color Correction",
+    Value = false,
     Callback = function(value)
         if value then
             if not ColorCorrection then
@@ -1841,6 +2236,50 @@ local function isBagFull()
     return getBagCount() >= 50
 end
 
+local function performPostFarmAction()
+    local plr = Players.LocalPlayer
+    if not plr then return end
+    if postFarmAction == "Afk" then
+        if plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.WalkSpeed = 0
+                hum.JumpPower = 0
+                hum.Sit = true
+            end
+        end
+    elseif postFarmAction == "End All" then
+        -- Kill all players to end the round
+        local localPlayer = Players.LocalPlayer
+        if localPlayer.Character then
+            if not localPlayer.Character:FindFirstChild("Knife") then
+                local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+                if backpack and backpack:FindFirstChild("Knife") then
+                    local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    hum:EquipTool(backpack:FindFirstChild("Knife"))
+                end
+            end
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Character and player ~= localPlayer then
+                    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        hrp.Anchored = true
+                        hrp.CFrame = localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame + localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame.LookVector * 1
+                    end
+                end
+            end
+            local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+            if knifeTool then
+                local args = {[1] = "Slash"}
+                knifeTool:WaitForChild("Stab"):FireServer(unpack(args))
+            end
+        end
+        AutofarmEnabled = false
+    elseif postFarmAction == "Reset" then
+        plr:LoadCharacter()
+    end
+end
+
 local function handleBagFull()
     if not AutofarmEnabled then return end
     AutofarmEnabled = false
@@ -1850,19 +2289,9 @@ local function handleBagFull()
     task.wait(0.5)
     if TeleportOnComplete then
         teleportToLobby()
-        Rayfield:Notify({
-            Title = "Autofarm Complete",
-            Content = "Bag full! Moving to lobby.",
-            Duration = 3,
-            Image = 4483362458,
-        })
+        -- Notification disabled (Wind UI incompatible)
     else
-        Rayfield:Notify({
-            Title = "Autofarm Complete",
-            Content = "Bag full! Autofarm stopped.",
-            Duration = 3,
-            Image = 4483362458,
-        })
+        -- Notification disabled (Wind UI incompatible)
     end
     CoinCount = 0
     coinBag = 0
@@ -1931,9 +2360,9 @@ local function updateAutofarmLabel()
                                "\nCoinbag: " .. coinBag ..
                                "\nCoins per hour: " .. math.floor(cph) ..
                                "\nFarm Status: " .. farmStatus
-            AutofarmStatusLabel:Set(statusText)
+            AutofarmStatusLabel:SetDesc(statusText)
         else
-            AutofarmStatusLabel:Set("Autofarm is disabled. Waiting...")
+            AutofarmStatusLabel:SetDesc("Autofarm is disabled. Waiting...")
         end
     end
 end
@@ -1943,25 +2372,14 @@ local flyConn = nil
 local TeleportOnComplete = false
 local postFarmAction = "Reset" -- options: Afk, End Round/Kill All, Reset
 
-local function performPostFarmAction()
-    local plr = Players.LocalPlayer
-    if not plr then return end
-    if postFarmAction == "Afk" then
-        if plr.Character then
-            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.WalkSpeed = 0
-                hum.JumpPower = 0
-                hum.Sit = true
-            end
-        end
-    elseif postFarmAction == "End Round/Kill All" then
-        -- placeholder: implement game-specific behaviour here
-        print("[HXN] Post-farm action: End Round/Kill All (not implemented)")
-    elseif postFarmAction == "Reset" then
-        plr:LoadCharacter()
-    end
-end
+-- autofarm state defaults
+local AutofarmEnabled = false
+local AutofarmType = "Floating"         -- "Floating" or "Teleport"
+local CollectHeight = -5                 -- coin collect offset
+local AutofarmSpeed = 20                 -- movement speed multiplier
+local ContinueOnDeath = false            -- end round toggle behavior
+local CoinCount = 0
+local LastCoinPosition = nil
 
 local function enableFly()
     if flyConn then return end
@@ -1984,230 +2402,329 @@ local function disableFly()
 end
 
 local function startAutofarm()
-	print("[HXN] Autofarm starting...")
-	-- reset tracking variables
-	autofarmStartTime = tick()
-	coinBag = getBagCount()
-	farmStatus = "Waiting for coins"
-	updateAutofarmLabel()
+    print("[HXN] Autofarm starting...")
+    -- reset tracking variables
+    autofarmStartTime = tick()
+    coinBag = getBagCount()
+    farmStatus = "Waiting for coins"
+    updateAutofarmLabel()
 
-	-- Enable persistent noclip for the entire autofarm session
-	local function applyNoclip()
-		local player = Players.LocalPlayer
-		if not player or not player.Character then return end
-		
-		-- Disable collisions on all parts
-		for _, part in ipairs(player.Character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = false
-				part.Velocity = Vector3.new(0, 0, 0)
-				part.RotVelocity = Vector3.new(0, 0, 0)
-			end
-		end
-		
-		-- Set humanoid properties for better noclip
-		local hum = player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.PlatformStand = true  -- Prevents ground detection
-			hum.Sit = false  -- Ensure not sitting
-		end
-	end
-	
-	-- Apply noclip initially
-	applyNoclip()
-	
-	-- Reapply noclip every few seconds to ensure it sticks
-	local noclipTask = task.spawn(function()
-		while AutofarmEnabled do
-			applyNoclip()
-			task.wait(2)  -- Reapply every 2 seconds
-		end
-	end)
-	table.insert(_G.HXN_TASKS, noclipTask)
-	
-	-- Monitor and set up coin touch detection
-	local coinTouchConnections = {}
-	local function setupCoinTouches()
-		-- Disconnect old coin connections
-		for _, conn in ipairs(coinTouchConnections) do
-			pcall(function() conn:Disconnect() end)
-		end
-		coinTouchConnections = {}
-		
-		-- Find all coins and listen to their touch events
-		for _, obj in ipairs(workspace:GetDescendants()) do
-			if obj.Name == "CoinVisual" then
-				local mainCoin = obj:FindFirstChild("MainCoin") or obj:FindFirstChildWhichIsA("BasePart")
-				if mainCoin then
-					local conn = mainCoin.Touched:Connect(function(hit)
-						local player = Players.LocalPlayer
-						if player and player.Character and hit:IsDescendantOf(player.Character) then
-							CoinCount = CoinCount + 1
-							print("[HXN] Coin collected! Count: " .. CoinCount)
-						end
-					end)
-					table.insert(coinTouchConnections, conn)
-					table.insert(_G.HXN_CONNECTIONS, conn)
-				end
-			end
-		end
-	end
-	
-	-- Setup coin touches initially
-	setupCoinTouches()
-	
-	-- Re-setup coin touches every 3 seconds in case new coins spawn
-	local coinMonitorTask = task.spawn(function()
-		while AutofarmEnabled do
-			task.wait(3)
-			setupCoinTouches()
-		end
-	end)
-	table.insert(_G.HXN_TASKS, coinMonitorTask)
-	
-	-- Main autofarm loop: wait for coins, farm until none left, reset, repeat
-	while AutofarmEnabled do
-		-- Wait for coins to spawn
-		while AutofarmEnabled do
-			local coinsExist = false
-			for _, obj in ipairs(workspace:GetDescendants()) do
-				if obj.Name == "Coin" or obj.Name == "CoinVisual" then
-					coinsExist = true
-					break
-				end
-			end
-			if coinsExist then
-				farmStatus = "Coins spawned"
-				updateAutofarmLabel()
-				break
-			end
-			farmStatus = "Waiting for coins"
-			updateAutofarmLabel()
-			task.wait(1)
-		end
-		
-		if not AutofarmEnabled then break end
-		
-		-- Farm until no coins left or bag full
-		while AutofarmEnabled do
-			-- refresh bag count each tick
-			coinBag = getBagCount()
-			local player = Players.LocalPlayer
-			if not player or not player.Character then
-				task.wait(0.5)
-				continue
-			end
-			
-			local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-			local head = player.Character:FindFirstChild("Head")
-			local hum = player.Character:FindFirstChildOfClass("Humanoid")
-			if not hrp or not head or not hum then
-				task.wait(0.5)
-				continue
-			end
-			
-			-- Find closest coin
-			local closestCoin = nil
-			local closestDist = math.huge
-			
-			for _, obj in ipairs(workspace:GetDescendants()) do
-				if obj.Name == "Coin" or obj.Name == "CoinVisual" then
-					local coinPart = obj
-					if obj.Name == "CoinVisual" then
-						coinPart = obj:FindFirstChild("MainCoin") or obj:FindFirstChildWhichIsA("BasePart")
-					end
-					
-					if coinPart then
-						local dist = (hrp.Position - coinPart.Position).Magnitude
-						if dist < closestDist then
-							closestDist = dist
-							closestCoin = coinPart
-						end
-					end
-				end
-			end
-			
-			-- If no coin found, break farming loop to reset and wait
-			if not closestCoin then
-				break
-			end
-			
-			-- If coin found, move to it smoothly
-			local coinPos = closestCoin.Position
-			local targetPos = coinPos  -- Move directly to coin position
+    -- Enable persistent noclip for the entire autofarm session
+    local function applyNoclip()
+        local player = Players.LocalPlayer
+        if not player or not player.Character then return end
+        
+        -- Disable collisions on all parts
+        for _, part in ipairs(player.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+        
+        -- Set humanoid properties for better noclip
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = true  -- Prevents ground detection
+            hum.Sit = false  -- Ensure not sitting
+        end
+    end
+    
+    -- Only apply noclip if using Floating mode (not Teleport)
+    if AutofarmType == "Floating" then
+        -- Apply noclip initially
+        applyNoclip()
+        
+        -- Reapply noclip every frame to ensure it sticks and counteract gravity
+        local noclipTask = task.spawn(function()
+            while AutofarmEnabled and AutofarmType == "Floating" do
+                applyNoclip()
+                task.wait(0.15)  -- Reapply every 0.15s to avoid conflicts with BodyVelocity
+            end
+        end)
+        table.insert(_G.HXN_TASKS, noclipTask)
+    end
+    
+    -- Monitor and set up coin touch detection
+    local coinTouchConnections = {}
+    local function setupCoinTouches()
+        -- Disconnect old coin connections
+        for _, conn in ipairs(coinTouchConnections) do
+            pcall(function() conn:Disconnect() end)
+        end
+        coinTouchConnections = {}
+        
+        -- Find all coins and listen to their touch events
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "CoinVisual" then
+                local mainCoin = obj:FindFirstChild("MainCoin") or obj:FindFirstChildWhichIsA("BasePart")
+                if mainCoin then
+                    local conn = mainCoin.Touched:Connect(function(hit)
+                        local player = Players.LocalPlayer
+                        if player and player.Character and hit:IsDescendantOf(player.Character) then
+                            CoinCount = CoinCount + 1
+                            print("[HXN] Coin collected! Count: " .. CoinCount)
+                        end
+                    end)
+                    table.insert(coinTouchConnections, conn)
+                    table.insert(_G.HXN_CONNECTIONS, conn)
+                end
+            end
+        end
+    end
+    
+    -- Setup coin touches initially
+    setupCoinTouches()
+    
+    -- Track coins we've already visited to avoid re-teleporting
+    local visitedCoins = {}
+    
+    -- Re-setup coin touches every 3 seconds in case new coins spawn
+    local coinMonitorTask = task.spawn(function()
+        while AutofarmEnabled do
+            task.wait(3)
+            setupCoinTouches()
+        end
+    end)
+    table.insert(_G.HXN_TASKS, coinMonitorTask)
+    
+    -- Main autofarm loop: wait for coins, farm until none left, reset, repeat
+    while AutofarmEnabled do
+        -- Wait for coins to spawn
+        while AutofarmEnabled do
+            local coinsExist = false
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Coin" or obj.Name == "CoinVisual" then
+                    coinsExist = true
+                    break
+                end
+            end
+            if coinsExist then
+                farmStatus = "Coins spawned"
+                updateAutofarmLabel()
+                break
+            end
+            farmStatus = "Waiting for coins"
+            updateAutofarmLabel()
+            task.wait(1)
+        end
+        
+        if not AutofarmEnabled then break end
+        
+        -- Clear visited coins for new round
+        visitedCoins = {}
+        
+        -- Farm until no coins left or bag full
+        while AutofarmEnabled do
+            -- refresh bag count each tick
+            coinBag = getBagCount()
+            if coinBag >= 50 then
+                farmStatus = "Bag full"
+                updateAutofarmLabel()
+                break
+            end
+            local player = Players.LocalPlayer
+            if not player or not player.Character then
+                task.wait(0.5)
+                continue
+            end
+            
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            local head = player.Character:FindFirstChild("Head")
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if not hrp or not head or not hum then
+                task.wait(0.5)
+                continue
+            end
+            
+            -- Find closest coin (skip recently visited ones)
+            local closestCoin = nil
+            local closestDist = math.huge
+            
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Coin" or obj.Name == "CoinVisual" then
+                    local coinPart = obj
+                    if obj.Name == "CoinVisual" then
+                        coinPart = obj:FindFirstChild("MainCoin") or obj:FindFirstChildWhichIsA("BasePart")
+                    end
+                    
+                    -- Only consider coins that still exist (not collected yet)
+                    if coinPart and coinPart.Parent and not visitedCoins[coinPart] then
+                        local dist = (hrp.Position - coinPart.Position).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            closestCoin = coinPart
+                        end
+                    end
+                end
+            end
+            
+            -- If no coin found, break farming loop to reset and wait
+            if not closestCoin then
+                break
+            end
+            
+            -- If coin found, move to it using selected method
+            local coinPos = closestCoin.Position
+            local targetPos = coinPos - Vector3.new(0, 1.5, 0) + Vector3.new(0, CollectHeight, 0)  -- Position so head touches coin
 
-			-- prevent map-fall death while moving
-			local oldFPDH = workspace.FallenPartsDestroyHeight
-			workspace.FallenPartsDestroyHeight = -math.huge
+            -- Mark this coin as visited immediately (so we don't teleport to it again)
+            visitedCoins[closestCoin] = true
 
-			-- Disable fly during movement to prevent upward force
-			disableFly()
+            -- prevent map-fall death while moving
+            local oldFPDH = workspace.FallenPartsDestroyHeight
+            workspace.FallenPartsDestroyHeight = -math.huge
 
-			-- Float smoothly to coin (always use floating for smoothness)
-			local moveSteps = 15
-			local startPos = hrp.CFrame
-			for i = 1, moveSteps do
-				if not AutofarmEnabled then break end
-				local alpha = i / moveSteps
-				hrp.CFrame = startPos:Lerp(CFrame.new(targetPos), alpha)
-				
-				-- Damp velocity to prevent shaking
-				for _, part in ipairs(player.Character:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.Velocity = Vector3.new(0, 0, 0)
-						part.RotVelocity = Vector3.new(0, 0, 0)
-					end
-				end
-				task.wait(0.02)
-			end
+            -- Disable fly during movement to prevent upward force
+            disableFly()
 
-			-- Wait a bit for collection to register
-			local beforeCount = CoinCount
-			local waitTime = 0
-			while waitTime < 0.5 and CoinCount == beforeCount do
-				task.wait(0.05)
-				waitTime = waitTime + 0.05
-			end
-			
-			workspace.FallenPartsDestroyHeight = oldFPDH
-			
-			-- Reset head back to normal offset if needed
-			head.CFrame = hrp.CFrame * CFrame.new(0, 1.5, 0)
-			farmStatus = "Collecting"
-			updateAutofarmLabel()
-			
-			task.wait(0.05)
-		end
-		
-		-- After farming loop (no coins left), reset character and wait for next round
-		if AutofarmEnabled then
-			farmStatus = "Resetting"
-			updateAutofarmLabel()
-			local plr = Players.LocalPlayer
-			if plr then
-				plr:LoadCharacter()
-			end
-			task.wait(1)  -- Brief wait after reset
-		end
-	end
-	
-	print("[HXN] Autofarm stopped")
-	
-	-- Restore normal collision and humanoid state
-	local player = Players.LocalPlayer
-	if player and player.Character then
-		for _, part in ipairs(player.Character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = true
-			end
-		end
-		local hum = player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.PlatformStand = false
-		end
-	end
-	
-	disableFly()
+            -- Use teleport or float based on AutofarmType
+            if AutofarmType == "Teleport" then
+                -- Slow down the teleport with a delay
+                task.wait(1)  -- Add 1 second delay before teleporting
+                
+                -- Instant teleport to coin
+                hrp.CFrame = CFrame.new(targetPos)
+                
+                -- Damp velocity after teleport
+                for _, part in ipairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.Velocity = Vector3.new(0, 0, 0)
+                        part.RotVelocity = Vector3.new(0, 0, 0)
+                    end
+                end
+                
+                task.wait(0.1)  -- Small delay to let coin register collection
+            else
+                -- Float smoothly to coin using BodyVelocity (fly logic)
+                local bodyVelocity = Instance.new("BodyVelocity")
+                bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                bodyVelocity.Parent = hrp
+                local bodyGyro = Instance.new("BodyGyro")
+                bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                bodyGyro.CFrame = hrp.CFrame
+                bodyGyro.Parent = hrp
+                
+                local reached = false
+                local lastVelocity = Vector3.new(0, 0, 0)
+                while not reached and AutofarmEnabled do
+                    -- Create target position that includes the coin's Y coordinate (for multi-floor support)
+                    local adjustedTargetPos = Vector3.new(coinPos.X, coinPos.Y + CollectHeight - 1.5, coinPos.Z)
+                    local direction = (adjustedTargetPos - hrp.Position)
+                    local dist = direction.Magnitude
+                    if dist < 1 then
+                        reached = true
+                        break
+                    end
+                    direction = direction.Unit
+                    -- Calculate target velocity and smooth it to avoid jitter
+                    local targetVelocity = direction * AutofarmSpeed
+                    lastVelocity = lastVelocity:Lerp(targetVelocity, 0.2)  -- Smooth transition (20% per frame)
+                    bodyVelocity.Velocity = lastVelocity
+                    
+                    -- Damp rotational velocity
+                    for _, part in ipairs(player.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.RotVelocity = Vector3.new(0, 0, 0)
+                        end
+                    end
+                    task.wait(0.1)
+                end
+                
+                bodyVelocity:Destroy()
+                bodyGyro:Destroy()
+            end
+
+            -- Wait a bit for collection to register
+            local beforeCount = CoinCount
+            local waitTime = 0
+            while waitTime < 0.5 and CoinCount == beforeCount do
+                task.wait(0.05)
+                waitTime = waitTime + 0.05
+            end
+            
+            workspace.FallenPartsDestroyHeight = oldFPDH
+            
+            -- Reset head back to normal offset if needed
+            head.CFrame = hrp.CFrame * CFrame.new(0, 1.5, 0)
+            farmStatus = "Collecting"
+            updateAutofarmLabel()
+            
+            task.wait(0.05)
+        end
+        
+        -- After farming loop, handle based on reason
+        if AutofarmEnabled then
+            if coinBag >= 50 then
+                -- Bag full, do post farm action and exit
+                if postFarmAction == "Reset" then
+                    farmStatus = "Resetting after full bag"
+                    updateAutofarmLabel()
+                    local plr = Players.LocalPlayer
+                    if plr then
+                        plr:LoadCharacter()
+                    end
+                    break
+                elseif postFarmAction == "Afk" then
+                    farmStatus = "AFK after full bag"
+                    updateAutofarmLabel()
+                    AutofarmEnabled = false
+                    updateAutofarmLabel()
+                    break
+                elseif postFarmAction == "End All" then
+                    farmStatus = "Ending round"
+                    updateAutofarmLabel()
+                    local localPlayer = Players.LocalPlayer
+                    if localPlayer.Character then
+                        if not localPlayer.Character:FindFirstChild("Knife") then
+                            local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+                            if backpack and backpack:FindFirstChild("Knife") then
+                                local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+                                hum:EquipTool(backpack:FindFirstChild("Knife"))
+                            end
+                        end
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if player.Character and player ~= localPlayer then
+                                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                                if hrp then
+                                    hrp.Anchored = true
+                                    hrp.CFrame = localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame + localPlayer.Character:FindFirstChild("HumanoidRootPart").CFrame.LookVector * 1
+                                end
+                            end
+                        end
+                        local knifeTool = localPlayer.Character:FindFirstChild("Knife")
+                        if knifeTool then
+                            local args = {[1] = "Slash"}
+                            knifeTool:WaitForChild("Stab"):FireServer(unpack(args))
+                        end
+                    end
+                    AutofarmEnabled = false
+                    updateAutofarmLabel()
+                    break
+                end
+            else
+                -- No coins found, wait for new coins (don't break - loop continues)
+                farmStatus = "Waiting for new coins"
+                updateAutofarmLabel()
+            end
+        end
+        -- Loop continues back to wait for coins to spawn
+    end
+    
+    -- Restore normal collision and humanoid state
+    local player = Players.LocalPlayer
+    if player and player.Character then
+        for _, part in ipairs(player.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+    end
+    
+    disableFly()
 end
 
 -- Call startAutofarm directly instead of spawning repeatedly
@@ -2266,145 +2783,132 @@ end)
 table.insert(_G.HXN_TASKS, deathWatchTask)
 
 -- farm progress section + label
-AutofarmTab:CreateSection("Farm progress")
-local AutofarmStatusLabel = AutofarmTab:CreateLabel("Autofarm is disabled. Waiting...")
+AutofarmTab:Section({Title = "Farm progress"})
 
-AutofarmTab:CreateSection("Autofarm Settings")
+local AutofarmStatusLabel = AutofarmTab:Paragraph({
+    Title = "Status",
+    Desc = "Autofarm is disabled. Waiting ..."
+})
 
--- type dropdown
-autofarmTypeDropdown = AutofarmTab:CreateDropdown({
-    Name = "Type of autofarm",
-    Options = {"Teleport", "Floating"},
-    CurrentOption = {AutofarmType},
-    Flag = "AutofarmType",
+-- settings
+AutofarmTab:Section({Title = "Settings"})
+
+--[[AutofarmTab:Dropdown({
+    Title = "Type of autofarm",
+    Values = {"Floating","Teleport"},
+    Value = {AutofarmType},
     Callback = function(opt)
         AutofarmType = opt[1]
     end,
+})--]]
+
+AutofarmTab:Toggle({
+   Title = "Autofarm",
+   Value = false,
+   Callback = function(Value)
+        AutofarmEnabled = Value
+        if Value then
+            -- initialize tracking UI
+            autofarmStartTime = tick()
+            coinBag = 0
+            farmStatus = "Starting"
+            updateAutofarmLabel()
+        else
+            updateAutofarmLabel()
+        end
+        if Value and not autofarmActive then
+            autofarmActive = true
+            startAutofarm()
+            autofarmActive = false
+        end
+        if not Value then
+            CoinCount = 0
+            LastCoinPosition = nil
+            disableFly()
+            -- Instantly disable noclip
+            local player = Players.LocalPlayer
+            if player and player.Character then
+                for _, part in ipairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.PlatformStand = false
+                end
+            end
+        end
+   end,
 })
 
--- continue on death toggle
-AutofarmTab:CreateToggle({
-   Name = "Continuing farm, if you are killed",
+-- coin level slider (-5 to 1)
+local CoinLevelSlider = AutofarmTab:Slider({
+   Title = "Choose coin-collecting level",
+   Step = 0.1,
+   Value = {
+       Min = 0,
+       Max = 1,
+       Default = 0,
+   },
+   Callback = function(v)
+        CollectHeight = v
+    end,
+})
+
+-- Add scroll wheel support for Coin Level slider
+if CoinLevelSlider and CoinLevelSlider.Instance then
+    CoinLevelSlider.Instance.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            local currentValue = CollectHeight or 0
+            local newValue = currentValue + (input.Position.Z > 0 and 0.1 or -0.1)
+            newValue = math.clamp(newValue, 0, 1)
+            CoinLevelSlider:SetValue(newValue)
+        end
+    end)
+end
+
+-- speed slider 20-25
+--[[AutofarmTab:Slider({
+   Name = "Autofarm Speed",
+   Range = {0, 30},
+   Increment = 1,
+   Suffix = "x",
+   CurrentValue = 10,
+   Flag = "AutofarmSpeed",
+   Callback = function(Value)
+        AutofarmSpeed = Value
+   end,
+})--]]
+
+-- end round toggle
+--[[AutofarmTab:Toggle({
+   Name = "End the round if dead or not in it",
    CurrentValue = ContinueOnDeath,
-   Flag = "AutofarmContinue",
+   Flag = "EndRoundToggle",
    Callback = function(v)
         ContinueOnDeath = v
    end,
-})
+})--]]
 
--- collect-level slider
-AutofarmTab:CreateSlider({
-   Name = "Choose coin-collecting level",
-   Range = {0.5, 5},
-   Increment = 0.5,
-   Suffix = "studs",
-   CurrentValue = CollectHeight,
-   Flag = "CollectHeight",
-   Callback = function(v)
-        CollectHeight = v
-   end,
-})
-
-AutofarmTab:CreateSection("Autofarm Settings")
-
-local AutofarmToggleUI = AutofarmTab:CreateToggle({
-   Name = "Autofarm",
-   CurrentValue = false,
-   Flag = "AutofarmToggle",
-   Callback = function(Value)
-		AutofarmEnabled = Value
-		if Value then
-			-- initialize tracking UI
-			autofarmStartTime = tick()
-			coinBag = 0
-			farmStatus = "Starting"
-			updateAutofarmLabel()
-		else
-			updateAutofarmLabel()
-		end
-		if Value and not autofarmActive then
-			autofarmActive = true
-			startAutofarm()
-			autofarmActive = false
-		end
-		if not Value then
-			CoinCount = 0
-			LastCoinPosition = nil
-			disableFly()
-		end
-   end,
-})
-
-local AutofarmSpeedSlider = AutofarmTab:CreateSlider({
-   Name = "Autofarm Speed",
-   Range = {1, 20},
-   Increment = 1,
-   Suffix = "x",
-   CurrentValue = 5,
-   Flag = "AutofarmSpeed",
-   Callback = function(Value)
-		AutofarmSpeed = Value
-   end,
-})
-
--- post‑farm action selector
-AutofarmTab:CreateDropdown({
-   Name = "Action after farming",
-   Options = {"Afk", "End Round/Kill All", "Reset"},
+-- post farm action dropdown
+--[[AutofarmTab:Dropdown({
+   Name = "Select action after farming coins",
+   Options = {"Reset","Afk","End All"},
    CurrentOption = {postFarmAction},
    Flag = "PostFarmAction",
    Callback = function(opt)
        postFarmAction = opt[1]
    end,
-})
+})--]]
 
 -- optional teleport toggle
-AutofarmTab:CreateToggle({
-   Name = "Teleport to Lobby on 50",
-   CurrentValue = TeleportOnComplete,
-   Flag = "TeleportOnComplete",
+AutofarmTab:Toggle({
+   Title = "Teleport to Lobby on 50",
+   Value = false,
    Callback = function(v)
-		TeleportOnComplete = v
-	end,
-})
-
--- Autofarm is now called directly from the toggle UI above
-
---------------------------------------------------
--- DEBUG: COIN POSITION VERIFICATION
---------------------------------------------------
-
-local DebugCoinButton = AutofarmTab:CreateButton({
-   Name = "Debug: List All Coin Positions",
-   Callback = function()
-       print("[HXN] Listing all coin positions:")
-       local coinCount = 0
-       for _, obj in ipairs(workspace:GetDescendants()) do
-           if obj.Name == "Coin" or obj.Name == "CoinVisual" then
-               local coinPart = obj
-               if obj.Name == "CoinVisual" then
-                   coinPart = obj:FindFirstChild("MainCoin") or obj:FindFirstChildWhichIsA("BasePart")
-               end
-               
-               if coinPart then
-                   coinCount = coinCount + 1
-                   print("  Coin " .. coinCount .. ": " .. tostring(coinPart.Position) .. " (obj: " .. obj.Name .. ")")
-               end
-           end
-       end
-       if coinCount == 0 then
-           print("[HXN] No coins found!")
-       else
-           print("[HXN] Total coins: " .. coinCount)
-       end
-       
-       Rayfield:Notify({
-           Title = "Coin Debug",
-           Content = "Check console (F9) for coin positions. Found: " .. coinCount,
-           Duration = 3,
-           Image = 4483362458,
-       })
-   end,
+        TeleportOnComplete = v
+    end,
 })
 
 --------------------------------------------------
@@ -2426,12 +2930,7 @@ local function teleportToGun()
 	
 	local gunPos = findGun()
 	if not gunPos then
-		Rayfield:Notify({
-		   Title = "No Gun Found",
-		   Content = "Gun not on the map.",
-		   Duration = 2,
-		   Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 	
@@ -2442,12 +2941,7 @@ local function teleportToGun()
 	localPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(gunPos + Vector3.new(0, 3, 0))
 	IsAtGun = true
 	
-	Rayfield:Notify({
-	   Title = "Teleported",
-	   Content = "You are now at the gun!",
-	   Duration = 1,
-	   Image = 4483362458,
-	})
+	-- Notification disabled (Wind UI incompatible)
 	
 	-- Monitor for gun pickup and auto-return
 	local gunMonitorTaskId = task.spawn(function()
@@ -2470,12 +2964,7 @@ local function teleportToGun()
 					player.Character.HumanoidRootPart.CFrame = OriginalPosition
 					IsAtGun = false
 					
-					Rayfield:Notify({
-					   Title = "Auto-Returned",
-					   Content = "Returned to original position!",
-					   Duration = 1,
-					   Image = 4483362458,
-					})
+					-- Notification disabled (Wind UI incompatible)
 					break
 				end
 			end
@@ -2488,12 +2977,7 @@ local function returnToOriginalPos()
 	if not localPlayer or not localPlayer.Character then return end
 	
 	if not OriginalPosition then
-		Rayfield:Notify({
-		   Title = "No Save",
-		   Content = "No original position saved.",
-		   Duration = 2,
-		   Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 	
@@ -2501,12 +2985,7 @@ local function returnToOriginalPos()
 	localPlayer.Character.HumanoidRootPart.CFrame = OriginalPosition
 	IsAtGun = false
 	
-	Rayfield:Notify({
-	   Title = "Teleported",
-	   Content = "You returned to your original position!",
-	   Duration = 1,
-	   Image = 4483362458,
-	})
+	-- Notification disabled (Wind UI incompatible)
 end
 
 local UserInputService = game:GetService("UserInputService")
@@ -2516,67 +2995,42 @@ local UserInputService = game:GetService("UserInputService")
 --------------------------------------------------
 
 -- GUN TELEPORT SECTION
-local GunTeleportSection = TeleportTab:CreateSection("Gun Teleport")
+TeleportTab:Section({Title = "Gun Teleport"})
 
-local GunTPToggle = TeleportTab:CreateToggle({
-   Name = "Gun Teleport",
-   CurrentValue = false,
-   Flag = "GunTP",
+TeleportTab:Toggle({
+   Title = "Gun Teleport",
+   Value = false,
    Callback = function(Value)
 		GunTPEnabled = Value
    end,
 })
 
-local GunTPKeybindInput = TeleportTab:CreateInput({
-   Name = "Gun TP Keybind",
-   PlaceholderText = "G (default)",
-   RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-		local keyText = string.upper(Text)
-		if keyText == "E" then
-			GunTPKeybind = Enum.KeyCode.E
-		elseif keyText == "R" then
-			GunTPKeybind = Enum.KeyCode.R
-		elseif keyText == "F" then
-			GunTPKeybind = Enum.KeyCode.F
-		elseif keyText == "Q" then
-			GunTPKeybind = Enum.KeyCode.Q
-		elseif keyText == "X" then
-			GunTPKeybind = Enum.KeyCode.X
-		elseif keyText == "G" then
-			GunTPKeybind = Enum.KeyCode.G
-		else
-			GunTPKeybind = Enum.KeyCode.G -- default
-		end
-   end,
-})
-
 -- MAP TELEPORTS SECTION
-local MapTeleportSection = TeleportTab:CreateSection("Map Teleports")
+TeleportTab:Section({Title = "Map Teleports"})
 
-local LobbyTPButton = TeleportTab:CreateButton({
-   Name = "TP To Lobby",
+TeleportTab:Button({
+   Title = "TP To Lobby",
    Callback = function()
         teleportToLobby()
    end,
 })
 
-local MapTPButton = TeleportTab:CreateButton({
-   Name = "TP To Map",
+TeleportTab:Button({
+   Title = "TP To Map",
    Callback = function()
         teleportToMap()
    end,
 })
 
-local SecretTPButton = TeleportTab:CreateButton({
-   Name = "TP To Secret Place",
+TeleportTab:Button({
+   Title = "TP To Secret Place",
    Callback = function()
         teleportToSecretPlace()
    end,
 })
 
 -- PLAYER TELEPORT SECTION
-local PlayerTeleportSection = TeleportTab:CreateSection("Player Teleport")
+TeleportTab:Section({Title = "Player Teleport"})
 
 --------------------------------------------------
 -- PLAYER TELEPORT
@@ -2594,12 +3048,7 @@ local function teleportToPlayer(playerName)
 	end
 	
 	if not targetPlayer or not targetPlayer.Character then
-		Rayfield:Notify({
-		   Title = "Error",
-		   Content = "Player not found or has no character.",
-		   Duration = 2,
-		   Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 	
@@ -2610,40 +3059,28 @@ local function teleportToPlayer(playerName)
 	local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
 	
 	if not hrp or not targetHRP then
-		Rayfield:Notify({
-		   Title = "Error",
-		   Content = "Could not find character parts.",
-		   Duration = 2,
-		   Image = 4483362458,
-		})
+		-- Notification disabled (Wind UI incompatible)
 		return
 	end
 	
 	-- Teleport to player position
 	hrp.CFrame = targetHRP.CFrame + Vector3.new(0, 3, 0)
 	
-	Rayfield:Notify({
-	   Title = "Teleported",
-	   Content = "Teleported to " .. playerName .. "!",
-	   Duration = 1,
-	   Image = 4483362458,
-	})
+	-- Notification disabled (Wind UI incompatible)
 end
 
 -- Player selection dropdown for teleport
-local PlayerTPDropdown = TeleportTab:CreateDropdown({
-   Name = "Select Player to TP",
-   Options = GetPlayerList(),
-   CurrentOption = {"None"},
-   MultipleOptions = false,
-   Flag = "PlayerTPSelect",
-   Callback = function(Options)
-       SelectedTPPlayer = Options[1]
+--[[local PlayerTPDropdown = TeleportTab:Dropdown({
+   Title = "Select Player to TP",
+   Values = GetPlayerList(),
+   Value = {"None"},
+   Callback = function(Option)
+       SelectedTPPlayer = Option[1]
    end,
-})
+})--]]
 
 -- Refresh dropdown when players join/leave
-local function RefreshPlayerTPDropdown()
+--[[local function RefreshPlayerTPDropdown()
     PlayerTPDropdown:Refresh(GetPlayerList(), true)
 end
 
@@ -2659,19 +3096,13 @@ local playerRemovingTPConn = Players.PlayerRemoving:Connect(function(player)
     end
     RefreshPlayerTPDropdown()
 end)
-table.insert(_G.HXN_CONNECTIONS, playerRemovingTPConn)
+table.insert(_G.HXN_CONNECTIONS, playerRemovingTPConn)--]]
 
 -- Teleport to Player Button
-local TPToPlayerButton = TeleportTab:CreateButton({
-   Name = "TP to Selected Player",
+TeleportTab:Button({
+   Title = "TP to Selected Player",
    Callback = function()
        if not SelectedTPPlayer or SelectedTPPlayer == "None" then
-           Rayfield:Notify({
-               Title = "Error",
-               Content = "Please select a player first!",
-               Duration = 2,
-               Image = 4483362458,
-           })
            return
        end
        teleportToPlayer(SelectedTPPlayer)
@@ -2692,65 +3123,64 @@ end)
 table.insert(_G.HXN_CONNECTIONS, gunTPInputConn)
 
 --------------------------------------------------
---------------------------------------------------
 -- TROLLING TAB UI - FLING CONTROLS
 --------------------------------------------------
 
 -- FLING TARGET SECTION
-local FlingTargetSection = TrollingTab:CreateSection("Select Target")
+TrollingTab:Section({Title = "Select Target"})
 
 -- Player selection dropdown for fling
-local FlingPlayerDropdown = TrollingTab:CreateDropdown({
-   Name = "Select Player",
-   Options = GetPlayerList(),
-   CurrentOption = {"None"},
-   MultipleOptions = false,
-   Flag = "FlingPlayerSelect",
-   Callback = function(Options)
-       SelectedFlingTarget = Options[1]
+local FlingPlayerDropdown = TrollingTab:Dropdown({
+   Title = "Select Player",
+   Values = GetPlayerList(),
+   Value = "None",
+   Callback = function(option)
+       SelectedFlingTarget = option
    end,
 })
 
 -- Refresh dropdown when players join/leave
 local function RefreshFlingDropdown()
-    FlingPlayerDropdown:Refresh(GetPlayerList(), true)
+    if FlingPlayerDropdown then
+        FlingPlayerDropdown:Refresh(GetPlayerList())
+    end
 end
 
 -- Connect to player events to update dropdown
-local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+local playerAddedConn2 = Players.PlayerAdded:Connect(function(player)
     RefreshFlingDropdown()
 end)
-table.insert(_G.HXN_CONNECTIONS, playerAddedConn)
+table.insert(_G.HXN_CONNECTIONS, playerAddedConn2)
 
-local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+local playerRemovingConn2 = Players.PlayerRemoving:Connect(function(player)
     if SelectedFlingTarget == player.Name then
         SelectedFlingTarget = nil
     end
     RefreshFlingDropdown()
 end)
-table.insert(_G.HXN_CONNECTIONS, playerRemovingConn)
+table.insert(_G.HXN_CONNECTIONS, playerRemovingConn2)
 
 -- FLING CONTROLS SECTION
-local FlingControlsSection = TrollingTab:CreateSection("Fling Controls")
+TrollingTab:Section({Title = "Fling Controls"})
 
 -- Start Flinging Button
-local StartFlingButton = TrollingTab:CreateButton({
-   Name = "Start Flinging",
+TrollingTab:Button({
+   Title = "Start Flinging",
    Callback = function()
        StartFling()
    end,
 })
 
 -- Stop Flinging Button
-local StopFlingButton = TrollingTab:CreateButton({
-   Name = "Stop Flinging",
+TrollingTab:Button({
+   Title = "Stop Flinging",
    Callback = function()
        StopFling()
    end,
 })
 
 -- FLING BY ROLE SECTION
-local FlingRoleSection = TrollingTab:CreateSection("Fling by Role")
+TrollingTab:Section({Title = "Fling by Role"})
 
 -- helper to fling by detected role (Murderer or Sheriff)
 local function flingRole(role)
@@ -2765,36 +3195,31 @@ local function flingRole(role)
         SelectedFlingTarget = target.Name
         StartFling()
     else
-        Rayfield:Notify({
-            Title = "Error",
-            Content = "No " .. role .. " found to fling!",
-            Duration = 2,
-            Image = 4483345998,
-        })
+        -- Notification disabled (Wind UI incompatible)
     end
 end
 
 -- fling specific roles
-local FlingMurdererButton = TrollingTab:CreateButton({
-   Name = "Fling Murderer",
+TrollingTab:Button({
+   Title = "Fling Murderer",
    Callback = function()
        flingRole("Murderer")
    end,
 })
 
-local FlingSheriffButton = TrollingTab:CreateButton({
-   Name = "Fling Sheriff",
+TrollingTab:Button({
+   Title = "Fling Sheriff",
    Callback = function()
        flingRole("Sheriff")
    end,
 })
 
 -- FLING ALL SECTION
-local FlingAllSection = TrollingTab:CreateSection("Fling All")
+TrollingTab:Section({Title = "Fling All"})
 
 -- Fling All Button
-local FlingAllButton = TrollingTab:CreateButton({
-   Name = "Fling All Players",
+TrollingTab:Button({
+   Title = "Fling All Players",
    Callback = function()
        FlingAll()
    end,
@@ -2804,21 +3229,21 @@ local FlingAllButton = TrollingTab:CreateButton({
 -- ESP TAB UI
 --------------------------------------------------
 
-local ESPMainToggle = ESPTab:CreateToggle({
-   Name = "ESP",
-   CurrentValue = false,
-   Flag = "Toggle1",
+ESPTab:Section({Title = "Main Control"})
+
+ESPTab:Toggle({
+   Title = "ESP",
+   Default = false,
    Callback = function(Value)
 		ESPEnabled = Value
    end,
 })
 
-ESPTab:CreateSection("ESP Options")
+ESPTab:Section({Title = "ESP Options"})
 
-local ESPNamesToggle = ESPTab:CreateToggle({
-   Name = "ESP Names",
-   CurrentValue = false,
-   Flag = "ESPNames",
+ESPTab:Toggle({
+   Title = "ESP Names",
+   Default = false,
    Callback = function(Value)
 		ESPNamesEnabled = Value
 		NameTagsEnabled = Value
@@ -2826,12 +3251,11 @@ local ESPNamesToggle = ESPTab:CreateToggle({
 })
 
 -- DROPPED ITEMS SECTION
-local DroppedItemsSection = ESPTab:CreateSection("Dropped Items")
+ESPTab:Section({Title = "Dropped Items"})
 
-local ESPDroppedGunToggle = ESPTab:CreateToggle({
-   Name = "ESP Dropped GunDrop",
-   CurrentValue = false,
-   Flag = "ESPDroppedGun",
+ESPTab:Toggle({
+   Title = "ESP Dropped GunDrop",
+   Default = false,
    Callback = function(Value)
 		ESPDroppedGunEnabled = Value
 		-- refresh displays when toggled
@@ -2843,28 +3267,26 @@ local ESPDroppedGunToggle = ESPTab:CreateToggle({
    end,
 })
 
-local ShowCoinsToggle = ESPTab:CreateToggle({
-   Name = "Show coins",
-   CurrentValue = false,
-   Flag = "ShowCoins",
+ESPTab:Toggle({
+   Title = "Show coins",
+   Default = false,
    Callback = function(Value)
 		ShowCoinsEnabled = Value
    end,
 })
 
-local ShowKnifeToggle = ESPTab:CreateToggle({
-   Name = "Show thrown knife (StuckKnife)",
-   CurrentValue = false,
-   Flag = "ShowKnife",
+ESPTab:Toggle({
+   Title = "Show thrown knife (StuckKnife)",
+   Default = false,
    Callback = function(Value)
 		ShowThrownKnifeEnabled = Value
    end,
 })
 
 -- DISPLAY MODE SECTION
-local DisplayModeSection = ESPTab:CreateSection("Display Mode")
+ESPTab:Section({Title = "Display Mode"})
 
-local ESPModeDropdown = ESPTab:CreateDropdown({
+--[[ESPTab:Dropdown({
    Name = "ESP Mode",
    Options = {"Highlight", "Chams", "Box"},
    CurrentOption = {"Highlight"},
@@ -2872,64 +3294,53 @@ local ESPModeDropdown = ESPTab:CreateDropdown({
    Callback = function(Option)
 		ESPModeType = Option[1]
    end,
-})
+})--]]
 
 -- ROLE ESP SECTION
-ESPTab:CreateSection("Role ESP")
+ESPTab:Section({Title = "Role ESP"})
 
-local InnocentToggle = ESPTab:CreateToggle({
-   Name = "Innocent ESP",
-   CurrentValue = true,
-   Flag = "InnocentESP",
+ESPTab:Toggle({
+   Title = "Innocent ESP",
+   Value = true,
    Callback = function(Value)
 		InnocentESPEnabled = Value
    end,
 })
 
-local SheriffToggle = ESPTab:CreateToggle({
-   Name = "Sheriff ESP",
-   CurrentValue = true,
-   Flag = "SheriffESP",
+ESPTab:Toggle({
+   Title = "Sheriff ESP",
+   Value = true,
    Callback = function(Value)
 		SheriffESPEnabled = Value
    end,
 })
 
-local MurdererToggle = ESPTab:CreateToggle({
-   Name = "Murderer ESP",
-   CurrentValue = true,
-   Flag = "MurdererESP",
+ESPTab:Toggle({
+   Title = "Murderer ESP",
+   Value = true,
    Callback = function(Value)
 		MurdererESPEnabled = Value
    end,
 })
 
-local TracersToggle = ESPTab:CreateToggle({
-   Name = "Player Tracers",
-   CurrentValue = false,
-   Flag = "TracersESP",
+ESPTab:Toggle({
+   Title = "Player Tracers",
+   Default = false,
    Callback = function(Value)
         TracersEnabled = Value
    end,
 })
 
---------------------------------------------------
--- AUTOFARM TAB UI - COIN COUNTER
---------------------------------------------------
-
--- Display coin counter
-AutofarmTab:CreateSection("Coin Counter")
-local CoinCounterLabel = AutofarmTab:CreateLabel("Coins Collected: 0/50")
-
--- Update coin counter label every frame (show bag count)
-local coinCounterTaskId = task.spawn(function()
-	while true do
-		task.wait(0.1)
-		coinBag = getBagCount()
-		CoinCounterLabel:Set("Coins Collected: " .. coinBag .. "/50")
-	end
-end)
-table.insert(_G.HXN_TASKS, coinCounterTaskId)
-
 print("[HXN] Script fully loaded and ready to use!")
+
+
+
+
+
+
+
+
+
+
+
 
