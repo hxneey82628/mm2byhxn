@@ -1,14 +1,5 @@
 -- ============================================================
--- HXN Hub MM2 — Optimized v8.1.0
--- Performance fixes:
---   - Removed RenderStepped frame counter (tick() delta instead)
---   - Tracer loop moved to Heartbeat throttled at 20fps, not RenderStepped
---   - Chams replaced with single Highlight per character (not per part)
---   - AntiFling throttled to every 10th heartbeat (~6/s)
---   - Spin throttled to every 2nd heartbeat (~30/s)
---   - Fly unchanged (necessary per-frame)
---   - workspace:GetDescendants() scan deferred 1 frame so UI loads first
---   - Memory cleanup interval increased to 5 minutes
+-- HXN Hub MM2 — Optimized v8.5.0
 -- ============================================================
 
 if _G.HXNHubLoaded then
@@ -63,7 +54,7 @@ local LocalPlayer      = Players.LocalPlayer
 -- ── ESP cleanup on reload ─────────────────────────────────────
 local ESP_CLEANUP_NAMES = {
 	PlayerHighlight = true, PlayerBox = true, PlayerBoxOutline = true,
-	NameTag = true, ChamHL = true,
+	NameTag = true, ChamHL = true, ChamsHL_Single = true,
 }
 for _, player in ipairs(Players:GetPlayers()) do
 	if player.Character then
@@ -95,6 +86,26 @@ local function trackConn(conn)
 	connectionSet[conn] = true
 	table.insert(_G.HXN_CONNECTIONS, conn)
 	return conn
+end
+
+-- ── Per-player connection registry (replaces _G key iteration) ─
+local playerConnRegistry = {}  -- [userId] = {conns table}
+
+local function registerPlayerConns(userId, conns)
+	playerConnRegistry[userId] = conns
+end
+
+local function cleanupPlayerConns(userId)
+	local conns = playerConnRegistry[userId]
+	if conns then
+		for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+		playerConnRegistry[userId] = nil
+	end
+	-- also clean _G keys for backward compat
+	local key = "HXN_PCONNS_" .. tostring(userId)
+	if _G[key] then _G[key] = nil end
+	local rkey = "HXN_REWIRE_" .. tostring(userId)
+	if _G[rkey] then _G[rkey] = nil end
 end
 
 -- ============================================================
@@ -393,8 +404,7 @@ local HighlightOutlineTransp = 0.0
 local ChamsFillTransp        = 0.5
 local BoxFillTransp          = 0.8
 
-local GunTPEnabled         = false
-local GunTPKeybind         = Enum.KeyCode.G
+local GunTPKeybind         = Enum.KeyCode.F
 local OriginalPosition     = nil
 local IsAtGun              = false
 local GunDropNotifyEnabled = false
@@ -437,6 +447,7 @@ end
 
 local function watchPlayerRole(player, playerConns)
 	local function onChange()
+		if not ESPEnabled then return end
 		task.spawn(function()
 			task.wait(0.1)
 			invalidateRole(player)
@@ -454,7 +465,8 @@ local function watchPlayerRole(player, playerConns)
 	end))
 end
 
--- ── Role detector: single shared throttled loop ───────────────
+-- ── Role detector ─────────────────────────────────────────────
+-- FIX: sleeps longer (task.wait(4)) when ESP is off — was 2.5s flat before
 local roleDetectorActive = false
 local roleDetectorThread = nil
 
@@ -473,9 +485,9 @@ local function startRoleDetector()
 						end
 					end
 				end
-				task.wait(0.5)
+				task.wait(2.5)
 			else
-				task.wait(2)
+				task.wait(4)
 			end
 		end
 	end)
@@ -584,65 +596,46 @@ CombatTab:Keybind({
 
 		local BULLET_SPEED = 500
 
-		local function sampleVelocity(hrp, samples, interval)
-			local total = Vector3.new()
-			local prev  = hrp.Position
-			for _ = 1, samples do
-				task.wait(interval)
-				if not hrp or not hrp.Parent then return nil end
-				local curr = hrp.Position
-				total = total + (curr - prev) / interval
-				prev  = curr
-			end
-			return total / samples
-		end
-
-		local function fireAtMurderer(smoothVel)
+		local function fireAtMurderer()
 			local mHRP = murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart")
-			local lHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-			if not mHRP or not lHRP then return false end
-			local origin    = originPart.Position
-			local targetPos = mHRP.Position
-			local vel       = smoothVel or mHRP.Velocity
-			local isJumping = vel.Y > 5
-			local predVel   = Vector3.new(vel.X, vel.Y * 0.5, vel.Z)
-			local predicted = targetPos
-			for _ = 1, 6 do
-				local dist    = (origin - predicted).Magnitude
-				local t       = dist / BULLET_SPEED
-				local livePos = mHRP.Position
-				predicted = Vector3.new(
-					livePos.X + predVel.X * t,
-					livePos.Y + predVel.Y * t,
-					livePos.Z + predVel.Z * t
-				)
+			if not mHRP then return false end
+
+			local snapPos = mHRP.Position
+			local snapVel = mHRP.Velocity
+			local origin  = originPart.Position
+			local dist    = (origin - snapPos).Magnitude
+			local ping    = LocalPlayer:GetNetworkPing()
+
+			local predicted
+			if dist < 15 then
+				-- Close range — aim directly
+				predicted = snapPos
+			else
+				local isAirborne = math.abs(snapVel.Y) > 3
+				if isAirborne then
+					-- Airborne — aim at snapshot position, no horizontal lead
+					-- (trajectory too unpredictable mid-air)
+					predicted = snapPos
+				else
+					local mHum    = murderer.Character:FindFirstChildOfClass("Humanoid")
+					local moveDir = mHum and mHum.MoveDirection or Vector3.new()
+					local speed   = Vector3.new(snapVel.X, 0, snapVel.Z).Magnitude
+					local leadTime = (dist / BULLET_SPEED) + ping
+					predicted = Vector3.new(
+						snapPos.X + moveDir.X * speed * leadTime,
+						snapPos.Y,
+						snapPos.Z + moveDir.Z * speed * leadTime
+					)
+				end
 			end
-			local yOffset = isJumping and 1.0 or 2.2
-			predicted = predicted + Vector3.new(0, yOffset, 0)
-			local directDist = (origin - mHRP.Position).Magnitude
-			if directDist < 20 then
-				predicted = mHRP.Position + Vector3.new(0, 2.2, 0)
-			end
+
 			pcall(function()
 				shootRemote:FireServer(CFrame.new(origin), CFrame.new(predicted))
 			end)
 			return true
 		end
 
-		task.spawn(function()
-			local mHRP = murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart")
-			if not mHRP then return end
-			fireAtMurderer(mHRP.Velocity)
-			task.wait(0.05)
-			local hum = murderer.Character and murderer.Character:FindFirstChildOfClass("Humanoid")
-			if hum and hum.Health > 0 then
-				mHRP = murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart")
-				if mHRP then
-					local v2 = sampleVelocity(mHRP, 2, 0.016)
-					fireAtMurderer(v2 or mHRP.Velocity)
-				end
-			end
-		end)
+		task.spawn(fireAtMurderer)
 	end,
 })
 
@@ -772,76 +765,73 @@ local function disableAntiAfk()
 end
 
 -- ============================================================
--- ANTI-FLING
--- PERF FIX: throttled to every 10th heartbeat (~6/s) instead of every 6th (~10/s)
--- PERF FIX: skip iteration entirely when table is empty
+-- ANTI-FLING (untouched as requested)
 -- ============================================================
 local antiFlingEnabled     = false
-local antiFlingHRPs        = {}
 local antiFlingConnections = {}
-local antiFlingHeartbeat   = nil
-local ZERO_VEC3            = Vector3.new()
-
-local function rebuildAntiFlingHRPs()
-	antiFlingHRPs = {}
-	local clientChar = LocalPlayer and LocalPlayer.Character
-	for _, v in ipairs(workspace:GetDescendants()) do
-		if v:IsA("BasePart") and v.Name == "HumanoidRootPart"
-			and v.Parent ~= clientChar and not v.Anchored
-		then
-			table.insert(antiFlingHRPs, v)
-		end
-	end
-end
+local antiFlingHeartbeats  = {}
+local antiFlingDiedConn    = nil
+local antiFlingDescConn    = nil
 
 local function startAntiFling()
 	if antiFlingEnabled then return end
 	antiFlingEnabled = true
-	rebuildAntiFlingHRPs()
-	local tickCount = 0
-	antiFlingHeartbeat = RunService.Heartbeat:Connect(function()
-		tickCount = tickCount + 1
-		if tickCount < 10 then return end  -- ~6/s instead of ~10/s
-		tickCount = 0
-		if #antiFlingHRPs == 0 then return end  -- skip if nothing to process
-		for i = #antiFlingHRPs, 1, -1 do
-			local v = antiFlingHRPs[i]
-			if v and v.Parent then
-				if v.Velocity.Magnitude > 5 then
-					v.Velocity    = ZERO_VEC3
-					v.RotVelocity = ZERO_VEC3
-					v.CanCollide  = false
-				end
-			else
-				table.remove(antiFlingHRPs, i)
-			end
+
+	local function applyAntiFlingToHRP(v)
+		if not (v and v.Parent) then return end
+		local hb = RunService.Heartbeat:Connect(function()
+			if not antiFlingEnabled then return end
+			if not (v and v.Parent) then return end
+			pcall(function()
+				v.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+				v.Velocity    = Vector3.new(0, 0, 0)
+				v.RotVelocity = Vector3.new(0, 0, 0)
+				v.CanCollide  = false
+			end)
+		end)
+		table.insert(antiFlingHeartbeats, hb)
+	end
+
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("Part") and v.Name == "HumanoidRootPart"
+			and v.Parent ~= LocalPlayer.Character and not v.Anchored
+		then
+			applyAntiFlingToHRP(v)
 		end
-	end)
-	local c1 = workspace.DescendantAdded:Connect(function(part)
+	end
+
+	antiFlingDescConn = workspace.DescendantAdded:Connect(function(part)
 		if not antiFlingEnabled then return end
-		if part:IsA("BasePart") and part.Name == "HumanoidRootPart"
+		if part:IsA("Part") and part.Name == "HumanoidRootPart"
 			and part.Parent ~= LocalPlayer.Character
 		then
-			table.insert(antiFlingHRPs, part)
+			task.wait(2)
+			if antiFlingEnabled then applyAntiFlingToHRP(part) end
 		end
 	end)
-	local c2 = workspace.DescendantRemoving:Connect(function(part)
-		if part.Name == "HumanoidRootPart" then
-			for i, v in ipairs(antiFlingHRPs) do
-				if v == part then table.remove(antiFlingHRPs, i) break end
-			end
-		end
-	end)
-	table.insert(antiFlingConnections, c1)
-	table.insert(antiFlingConnections, c2)
+	table.insert(antiFlingConnections, antiFlingDescConn)
+
+	local char = LocalPlayer and LocalPlayer.Character
+	local hum  = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		antiFlingDiedConn = hum.Died:Connect(function()
+			if antiFlingDiedConn then antiFlingDiedConn:Disconnect() antiFlingDiedConn = nil end
+			for _, hb in ipairs(antiFlingHeartbeats) do pcall(function() hb:Disconnect() end) end
+			antiFlingHeartbeats = {}
+		end)
+	end
+
+	Notify("Anti-Fling", "Anti-Fling activated.", "shield", 3)
 end
 
 local function stopAntiFling()
 	antiFlingEnabled = false
-	if antiFlingHeartbeat then antiFlingHeartbeat:Disconnect() antiFlingHeartbeat = nil end
-	for _, c in ipairs(antiFlingConnections) do pcall(function() c:Disconnect() end) end
+	if antiFlingDiedConn then antiFlingDiedConn:Disconnect() antiFlingDiedConn = nil end
+	if antiFlingDescConn then antiFlingDescConn:Disconnect() antiFlingDescConn = nil end
+	for _, hb in ipairs(antiFlingHeartbeats) do pcall(function() hb:Disconnect() end) end
+	for _, c  in ipairs(antiFlingConnections) do pcall(function() c:Disconnect() end) end
+	antiFlingHeartbeats  = {}
 	antiFlingConnections = {}
-	antiFlingHRPs        = {}
 end
 
 -- ============================================================
@@ -862,7 +852,6 @@ OtherTab:Toggle({
 	Callback = function(v) if v then startAntiFling() else stopAntiFling() end end,
 })
 
--- Round Timer
 OtherTab:Section({ Title = "Round Timer" })
 local roundTimerEnabled = false
 local roundTimerGui     = nil
@@ -904,6 +893,7 @@ OtherTab:Toggle({
 			if old then old:Destroy() end
 			local gui, lbl = createTimerGui()
 			roundTimerGui = gui
+			-- FIX: token prevents double-loop on rapid toggle
 			local myToken = {}
 			roundTimerEnabled = myToken
 			task.spawn(function()
@@ -961,10 +951,24 @@ OtherTab:Button({
 	end,
 })
 
+OtherTab:Button({
+	Title = "Rejoin Server",
+	Callback = function()
+		local TeleportService = game:GetService("TeleportService")
+		local placeId = game.PlaceId
+		local jobId   = game.JobId
+		Notify("Other", "Rejoining server...", "refresh-cw", 3)
+		task.wait(1)
+		pcall(function()
+			TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
+		end)
+	end,
+})
+
 EmoteTab:Button({
 	Title = "Emotes",
 	Callback = function()
-		loadstring(game:HttpGet("https://raw.githubusercontent.com/Joystickplays/AFEM/main/max/afemmax.lua"))()
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/hxneey82628/emotes/refs/heads/main/emotes.lua"))()
 	end,
 })
 
@@ -973,32 +977,33 @@ EmoteTab:Button({
 -- ============================================================
 CharacterTab:Section({ Title = "Performance" })
 
--- PERF FIX: no RenderStepped frame counter at all.
--- Use tick() delta between two task.wait(1) calls to derive FPS estimate.
--- This is accurate enough for a display label and costs zero per-frame budget.
 local fps         = 0
 local currentPing = 0
 
 local PerformanceLabel = CharacterTab:Paragraph({ Title = "FPS & Ping", Desc = "FPS: 0 | Ping: 0 ms" })
 
+-- FIX: single clean loop — no Heartbeat:Wait() blocking, no RenderStepped connection
+local frameCount = 0
+local frameConn  = RunService.RenderStepped:Connect(function() frameCount = frameCount + 1 end)
+trackConn(frameConn)
+
 local perfTask = task.spawn(function()
+	local lastTime = tick()
 	while true do
-		local t0 = tick()
 		task.wait(1)
-		local elapsed = tick() - t0
-		-- elapsed > 1 means the frame was stalled; back-calculate approximate FPS
-		-- from how long the scheduler actually slept
-		fps         = math.floor(1 / RunService.Heartbeat:Wait() + 0.5)
-		currentPing = math.floor(LocalPlayer:GetNetworkPing() * 1000)
+		local now     = tick()
+		local elapsed = now - lastTime
+		fps           = elapsed > 0 and math.floor(frameCount / elapsed) or 0
+		frameCount    = 0
+		lastTime      = now
+		currentPing   = math.floor(LocalPlayer:GetNetworkPing() * 1000)
 		if PerformanceLabel then
 			PerformanceLabel:SetDesc("FPS: " .. fps .. " | Ping: " .. currentPing .. " ms")
 		end
-		task.wait(math.max(0, 1 - (tick() - t0 - elapsed)))
 	end
 end)
 table.insert(_G.HXN_TASKS, perfTask)
 
--- ── Movement ──────────────────────────────────────────────────
 CharacterTab:Section({ Title = "Movement" })
 
 local currentWalkSpeed = 16
@@ -1051,7 +1056,6 @@ local flyBodyVelocity = nil
 local flyBodyGyro     = nil
 local flyHeartbeat    = nil
 local flyAnimConn     = nil
-
 local currentJumpPower = 50
 local jumpPowerEnabled = false
 
@@ -1083,7 +1087,7 @@ local function startFly()
 			flyHeartbeat:Disconnect() flyHeartbeat = nil
 			return
 		end
-		local c  = LocalPlayer and LocalPlayer.Character
+		local c = LocalPlayer and LocalPlayer.Character
 		if not c then return end
 		local rp = c:FindFirstChild("HumanoidRootPart")
 		if not rp or not flyBodyVelocity or not flyBodyVelocity.Parent then return end
@@ -1238,9 +1242,11 @@ end
 
 -- ============================================================
 -- WORLD OBJECT TRACKER (event-driven)
--- PERF FIX: initial scan deferred 1 frame so UI finishes loading first
 -- ============================================================
 local trackedObjects = {}
+
+-- FIX: whitelist of names — onDescendantAdded exits immediately for irrelevant objects
+local TRACKED_NAMES = { GunDrop = true, StuckKnife = true, Coin = true, CoinVisual = true }
 
 local function applyGunHighlight(gun)
 	for _, c in ipairs(gun:GetChildren()) do
@@ -1296,12 +1302,24 @@ local function applyCoinHighlight(obj)
 	h.Enabled             = true
 end
 
+-- FIX: gun drop notify — flag to skip notification on initial scan
+local scriptJustLoaded = true
+task.defer(function() scriptJustLoaded = false end)
+
+-- FIX: cooldown so rapid DescendantAdded fires don't double-notify
+local gunDropNotifyCooldown = false
+
 local function onDescendantAdded(obj)
 	local name = obj.Name
+	if not TRACKED_NAMES[name] then return end
+
 	if name == "GunDrop" then
 		trackedObjects[obj] = "GunDrop"
 		applyGunHighlight(obj)
-		if GunDropNotifyEnabled then
+		-- FIX: skip on initial scan, skip if on cooldown
+		if GunDropNotifyEnabled and not scriptJustLoaded and not gunDropNotifyCooldown then
+			gunDropNotifyCooldown = true
+			task.delay(3, function() gunDropNotifyCooldown = false end)
 			local ok, pos = pcall(function()
 				return obj:IsA("Model") and obj:GetPivot().Position or obj:IsA("BasePart") and obj.Position
 			end)
@@ -1323,11 +1341,10 @@ local function onDescendantAdded(obj)
 end
 
 local function onDescendantRemoving(obj)
-	trackedObjects[obj] = nil
+	if trackedObjects[obj] then trackedObjects[obj] = nil end
 end
 
--- PERF FIX: defer the expensive GetDescendants scan by 1 frame so the UI
--- finishes loading before we hammer the CPU with thousands of object checks.
+-- FIX: use task.defer so initial scan doesn't block script load
 task.defer(function()
 	for _, obj in ipairs(workspace:GetDescendants()) do onDescendantAdded(obj) end
 end)
@@ -1345,23 +1362,13 @@ end
 
 -- ============================================================
 -- ESP — event-driven player tracking
--- PERF FIX: Chams now uses ONE Highlight on the character model root
---           instead of one Highlight per body part.
---           This cuts Highlight count from ~10 per player to 1 per player,
---           which is a massive GPU win with full servers.
 -- ============================================================
 local function clearHighlight(char)
-	for _, obj in ipairs(char:GetChildren()) do
-		if obj:IsA("Highlight") then obj:Destroy() end
-	end
+	local h = char:FindFirstChild("PlayerHighlight")
+	if h then h:Destroy() end
 end
 
 local function clearChams(char)
-	-- Old per-part chams cleanup
-	for _, obj in ipairs(char:GetDescendants()) do
-		if obj.Name == "ChamHL" then obj:Destroy() end
-	end
-	-- New single-highlight chams cleanup
 	local h = char:FindFirstChild("ChamsHL_Single")
 	if h then h:Destroy() end
 end
@@ -1388,8 +1395,8 @@ updatePlayer = function(player)
 
 	local role  = getRole(player)
 	local color = OTHER_PLAYER_COLOR
-	if role == "Murderer"     then color = MURDERER_COLOR
-	elseif role == "Sheriff"  then color = SHERIFF_COLOR end
+	if role == "Murderer"    then color = MURDERER_COLOR
+	elseif role == "Sheriff" then color = SHERIFF_COLOR end
 
 	local shouldShow = ESPEnabled and (
 		(role == "Murderer" and MurdererESPEnabled)
@@ -1397,7 +1404,7 @@ updatePlayer = function(player)
 		or (role == "Other"   and InnocentESPEnabled)
 	)
 
-	-- Highlight (one per character, on the model itself)
+	-- Highlight
 	if ESPStyles.Highlight and shouldShow then
 		local hl = char:FindFirstChild("PlayerHighlight")
 		if not hl then
@@ -1415,8 +1422,7 @@ updatePlayer = function(player)
 		clearHighlight(char)
 	end
 
-	-- PERF FIX: Chams = ONE Highlight on the char model with AlwaysOnTop.
-	-- Looks identical to per-part chams but costs 1 Highlight instead of ~10.
+	-- Chams — single Highlight on char (not per-part)
 	if ESPStyles.Chams and shouldShow then
 		local chl = char:FindFirstChild("ChamsHL_Single")
 		if not chl then
@@ -1498,9 +1504,12 @@ end
 
 local function startTracking(player)
 	local playerConns = {}
+
+	-- FIX: watchPlayerRole gets playerConns so all connections are tracked
 	watchPlayerRole(player, playerConns)
 
 	local function onRoleChange()
+		if not ESPEnabled then return end
 		task.spawn(function()
 			task.wait(0.1)
 			invalidateRole(player)
@@ -1508,24 +1517,26 @@ local function startTracking(player)
 		end)
 	end
 
+	-- FIX: charConns cleaned on each respawn AND on CharacterRemoving
 	local charConns = {}
 	local function wireChar(char)
 		for _, c in ipairs(charConns) do pcall(function() c:Disconnect() end) end
 		table.clear(charConns)
+		if not ESPEnabled then return end
 		table.insert(charConns, char.ChildAdded:Connect(onRoleChange))
 		table.insert(charConns, char.ChildRemoved:Connect(onRoleChange))
 	end
 
 	if player.Character then
 		wireChar(player.Character)
-		updatePlayer(player)
+		if ESPEnabled then updatePlayer(player) end
 	end
 
 	table.insert(playerConns, player.CharacterAdded:Connect(function(char)
 		invalidateRole(player)
 		wireChar(char)
 		task.wait(0.2)
-		updatePlayer(player)
+		if ESPEnabled then updatePlayer(player) end
 	end))
 
 	table.insert(playerConns, player.CharacterRemoving:Connect(function(char)
@@ -1534,6 +1545,12 @@ local function startTracking(player)
 		table.clear(charConns)
 	end))
 
+	-- Store rewire function for when ESP is toggled on
+	_G["HXN_REWIRE_" .. player.UserId] = function()
+		if player.Character then wireChar(player.Character) end
+	end
+
+	registerPlayerConns(player.UserId, playerConns)
 	_G["HXN_PCONNS_" .. player.UserId] = playerConns
 end
 
@@ -1547,36 +1564,62 @@ end))
 
 trackConn(Players.PlayerRemoving:Connect(function(p)
 	roleCache[p] = nil
-	local pConns = _G["HXN_PCONNS_" .. p.UserId]
-	if pConns then
-		for _, c in ipairs(pConns) do pcall(function() c:Disconnect() end) end
-		_G["HXN_PCONNS_" .. p.UserId] = nil
-	end
+	cleanupPlayerConns(p.UserId)
 end))
 
-startRoleDetector()
-
 -- ============================================================
--- TRACERS
--- PERF FIX: moved from RenderStepped to Heartbeat, throttled to ~20fps
--- RenderStepped runs every frame (60+/s) — Heartbeat at /3 = ~20/s
--- Lines still look smooth enough at 20fps; saves ~66% of tracer CPU cost.
+-- TRACERS (untouched as requested)
 -- ============================================================
 local Camera      = workspace.CurrentCamera
 local tracerLines = _G.HXN_TRACERS
 
--- PERF FIX: Memory cleanup every 5 minutes instead of 2
+-- ============================================================
+-- MEMORY CLEANUP — every 60 seconds
+-- FIX: no longer iterates _G table — uses playerConnRegistry instead
+-- FIX: added to _G.HXN_TASKS so it cancels on reload
+-- ============================================================
 local cleanupTask = task.spawn(function()
 	while true do
-		task.wait(300)
-		local cleanTracked = {}
-		for obj, kind in pairs(trackedObjects) do cleanTracked[obj] = kind end
-		trackedObjects = cleanTracked
+		task.wait(60)
+
+		-- Remove dead tracked objects
+		for obj in pairs(trackedObjects) do
+			if not obj or not obj.Parent then
+				trackedObjects[obj] = nil
+			end
+		end
+
+		-- Clear stale role cache
+		for player in pairs(roleCache) do
+			if not player or not player.Parent then
+				roleCache[player] = nil
+			end
+		end
+
+		-- Clean dead tracer lines
 		for player, line in pairs(tracerLines) do
 			if not player.Parent then
 				pcall(function() line:Remove() end)
 				tracerLines[player] = nil
 			end
+		end
+
+		-- FIX: clean playerConnRegistry for players who left
+		-- Uses our own registry, not _G iteration
+		local activePlayers = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			activePlayers[p.UserId] = true
+		end
+		for userId in pairs(playerConnRegistry) do
+			if not activePlayers[userId] then
+				cleanupPlayerConns(userId)
+			end
+		end
+
+		-- Clean dead anti-fling heartbeats
+		if not antiFlingEnabled and #antiFlingHeartbeats > 0 then
+			for _, hb in ipairs(antiFlingHeartbeats) do pcall(function() hb:Disconnect() end) end
+			antiFlingHeartbeats = {}
 		end
 	end
 end)
@@ -1609,26 +1652,24 @@ end))
 local function startTracerLoop()
 	if _G.HXN_TRACER_LOOP then return end
 	local tracerTick = 0
-	-- PERF FIX: Heartbeat throttled to every 3rd call (~20fps) instead of RenderStepped every frame
 	_G.HXN_TRACER_LOOP = RunService.Heartbeat:Connect(function()
 		tracerTick = tracerTick + 1
-		if tracerTick < 3 then return end
+		if tracerTick < 5 then return end
 		tracerTick = 0
 		for player, line in pairs(tracerLines) do
-			if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-				local root = player.Character.HumanoidRootPart
-				local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
-				if onScreen then
-					line.Visible   = true
-					line.From      = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-					line.To        = Vector2.new(pos.X, pos.Y)
-					local role     = getRole(player)
-					line.Color     = role == "Murderer" and MURDERER_COLOR
-						or role == "Sheriff" and SHERIFF_COLOR or OTHER_PLAYER_COLOR
-					line.Thickness = 3
-				else
-					line.Visible = false
-				end
+			local char = player.Character
+			if not char then line.Visible = false continue end
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if not root then line.Visible = false continue end
+			local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+			if onScreen then
+				line.Visible   = true
+				line.From      = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+				line.To        = Vector2.new(pos.X, pos.Y)
+				local role     = getRole(player)
+				line.Color     = role == "Murderer" and MURDERER_COLOR
+					or role == "Sheriff" and SHERIFF_COLOR or OTHER_PLAYER_COLOR
+				line.Thickness = 3
 			else
 				line.Visible = false
 			end
@@ -1719,7 +1760,7 @@ end })
 AutofarmTab:Section({ Title = "Autofarm — Work In Progress" })
 AutofarmTab:Paragraph({
 	Title = "Coming Soon",
-	Desc  = "Autofarm is temporarily disabled while it's being reworked.\nCheck back in a future update.",
+	Desc  = "Autofarm is temporarily disabled while it\'s being reworked.\nCheck back in a future update.",
 })
 
 -- ============================================================
@@ -1787,7 +1828,7 @@ local function teleportToGun()
 	OriginalPosition = hrp.CFrame
 	hrp.CFrame       = CFrame.new(gunPos + Vector3.new(0, 3, 0))
 	IsAtGun          = true
-	Notify("Teleport", "Teleported to Gun. Press " .. GunTPKeybind.Name .. " to return.", "check", 3)
+	Notify("Teleport", "Teleported to gun successfully!", "check", 3)
 	local cancelConn
 	cancelConn = LocalPlayer.CharacterRemoving:Connect(function()
 		IsAtGun = false
@@ -1795,7 +1836,7 @@ local function teleportToGun()
 	end)
 	task.spawn(function()
 		while IsAtGun do
-			task.wait(0.05)
+			task.wait(0.3)
 			local plr = Players.LocalPlayer
 			if not plr or not plr.Character then IsAtGun = false break end
 			local bp     = plr:FindFirstChildOfClass("Backpack")
@@ -1822,7 +1863,28 @@ local function returnToOriginalPos()
 end
 
 TeleportTab:Section({ Title = "Gun Teleport" })
-TeleportTab:Toggle({ Title = "Gun Teleport", Value = false, Callback = function(v) GunTPEnabled = v end })
+
+TeleportTab:Button({
+	Title = "Teleport to Gun / Return",
+	Callback = function()
+		if not IsAtGun then teleportToGun() else returnToOriginalPos() end
+	end,
+})
+
+local GunTPKeybindEnabled = false
+
+TeleportTab:Toggle({
+	Title = "Enable Gun TP Keybind", Value = false,
+	Callback = function(v) GunTPKeybindEnabled = v end,
+})
+
+TeleportTab:Keybind({
+	Title = "Gun TP Keybind", Value = "F",
+	Callback = function(keyName)
+		local ok, key = pcall(function() return Enum.KeyCode[keyName] end)
+		if ok and key then GunTPKeybind = key end
+	end,
+})
 
 TeleportTab:Section({ Title = "Map Teleports" })
 TeleportTab:Button({ Title = "TP To Lobby",       Callback = function() teleportToLobby()      Notify("Teleport","Teleported to Lobby.","check",2) end })
@@ -1866,7 +1928,7 @@ end
 
 trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
-	if input.KeyCode == GunTPKeybind and GunTPEnabled then
+	if GunTPKeybindEnabled and input.KeyCode == GunTPKeybind then
 		if not IsAtGun then teleportToGun() else returnToOriginalPos() end
 	end
 end))
@@ -1983,8 +2045,7 @@ local function StartFling()
 				if p.Name == SelectedFlingTarget and p ~= LocalPlayer then target = p break end
 			end
 			if target and target.Parent then
-				SkidFling(target)
-				task.wait(0.1)
+				SkidFling(target) task.wait(0.1)
 			else
 				FlingActive = false break
 			end
@@ -2050,8 +2111,6 @@ TrollingTab:Section({ Title = "Fling All" })
 TrollingTab:Button({ Title = "Fling All Players", Callback = FlingAll })
 
 -- ── Spin ──────────────────────────────────────────────────────
--- PERF FIX: throttled to every 2nd heartbeat (~30/s) instead of every frame
--- 30fps spin is visually indistinguishable from 60fps spin
 local spinEnabled = false
 local spinSpeed   = 10
 local spinConn    = nil
@@ -2064,11 +2123,9 @@ local function startSpin()
 	local spinTick = 0
 	spinConn = RunService.Heartbeat:Connect(function()
 		spinTick = spinTick + 1
-		if spinTick < 2 then return end  -- ~30/s
+		if spinTick < 2 then return end
 		spinTick = 0
-		if not spinEnabled then
-			spinConn:Disconnect() spinConn = nil return
-		end
+		if not spinEnabled then spinConn:Disconnect() spinConn = nil return end
 		if not hrp.Parent then
 			local newChar = LocalPlayer and LocalPlayer.Character
 			hrp = newChar and newChar:FindFirstChild("HumanoidRootPart")
@@ -2083,11 +2140,8 @@ local function stopSpin()
 	if spinConn then spinConn:Disconnect() spinConn = nil end
 end
 
-trackConn(LocalPlayer.CharacterAdded:Connect(function(char)
-	if spinEnabled then
-		task.wait(0.5)
-		startSpin()
-	end
+trackConn(LocalPlayer.CharacterAdded:Connect(function()
+	if spinEnabled then task.wait(0.5) startSpin() end
 end))
 
 TrollingTab:Section({ Title = "Spin" })
@@ -2116,6 +2170,7 @@ end
 -- ESP TAB
 -- ============================================================
 local function refreshAllESP()
+	if not ESPEnabled then return end
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character then updatePlayer(p) end
 	end
@@ -2127,10 +2182,18 @@ ESPTab:Toggle({
 	Callback = function(v)
 		ESPEnabled = v
 		if not v then
+			stopRoleDetector()
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= LocalPlayer and p.Character then clearAllESPOnCharacter(p.Character) end
 			end
 		else
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer then
+					local rewire = _G["HXN_REWIRE_" .. p.UserId]
+					if rewire then rewire() end
+				end
+			end
+			startRoleDetector()
 			refreshAllESP()
 		end
 	end,
@@ -2237,12 +2300,11 @@ ESPTab:Toggle({ Title = "Show Coins", Default = false, Callback = function(v)
 			if kind == "Coin" then applyCoinHighlight(obj) end
 		end
 	else
+		-- FIX: use trackedObjects only, no workspace scan
 		for obj, kind in pairs(trackedObjects) do
 			if kind == "Coin" and obj.Parent then
 				for _, child in ipairs(obj:GetChildren()) do
-					if child.Name == "CoinHighlight" then
-						pcall(function() child:Destroy() end)
-					end
+					if child.Name == "CoinHighlight" then pcall(function() child:Destroy() end) end
 				end
 			end
 		end
@@ -2281,4 +2343,4 @@ ESPTab:Toggle({
 	end,
 })
 
-print("[HXN] Script fully loaded — v8.1.0 (performance optimized)")
+print("[HXN] Script fully loaded — v8.5.0")
